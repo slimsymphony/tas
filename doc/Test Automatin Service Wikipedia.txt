@@ -1,0 +1,2012 @@
+﻿*Test Automation Service Guide*
+
+%TOC%
+
+---++ What is Test Automation Service
+
+Test Automation Service is a number of software components for creating and monitoring test farms inside the Continuous Integration 2.0. "Test farm" means a dynamic set of internetworked computers with the physically and virtually attached products (phones and their prototypes). Each such computer with the attached products represents a single "test node" inside the test farm. Products may be added or removed from the test node "on the fly". In just the same manner test nodes may be added or removed from the test farm.
+
+All test nodes inside the same test farm are virtually interconnected through a special software component called "Test Automation Service".
+Test Automation Service, or "TAS" for short, works as a representative and the master of a single test farm. Test Automation Service is responsible for the following tasks:
+
+    - Managing test farm's resources: test nodes and their devices
+
+    - Keeping eye on wellbeing of test nodes and their devices
+
+    - Selecting the best devices and test nodes for issued tests
+
+    - Qeuing the tests when they cannot be executed in parallel
+
+In other words, Test Automation Service might be described as the controller of a test farm while test nodes might be described as subordinates of the Test Automation Service and building blocks of a test farm.
+
+An example of the Test Automation Service architecture and deployment is presented on the following picture:
+
+<img alt="Test Automation Service" src="%ATTACHURLPATH%/TASOveralArchitecture.png" />
+
+Here we can see a dedicated Linux server that is running multiple instances of Test Automation Service applications: TAS 1, TAS 2, TAS 3, ..., and TAS n. Since each instance of the Test Automation Service application is handling and managing a single test farm, here we've got N testing farms virtually available to the CI 2.0 systems.
+
+Each test farm is having some number of test nodes: typical Windows computers with the special software installed on them. For example, TAS 1 is handling Test Node 1, Test Node 2, ..., and Test Node n.
+
+Each test node is handling some number of products: phones or their prototypes. All devices are connected to the test nodes either directly over USB cables, flash prommers and special REBO box, or virtually over TCP/IP network. Just like on the following picture:
+
+<img alt="A single test node" src="%ATTACHURLPATH%/TestNode.png" />
+
+Since all product connections must be configured on computer through the FUSE application anyway, you can also connect networked devices just to the same computer with FUSE featured connection manager. With all these features you can create quite flexibly configured test farms, adjusting your needs in device pool capabilities.
+
+
+
+---+++ How test are automated
+
+Test nodes by itself are nothing more but usual Windows computers with the special software installed on them. That special software is required as for making connected devices visible to the Test Automation Service application, as for automating test executions on selected test nodes.
+
+One of such special software component is Test Automation Communicator. Test Automation Communicator, or "Communicator" for short, is a networked Java application that keeps eye on what devices are connected to the computer and informs Test Automation Service application about their availability. Test Automation Communicators are delivering to the Test Automation Service quite detailed information about all available devices, including their RM codes, IMEI numbers and FUSE connection information. In addition to that each Test Automation Communicator is working as a resident applications on the test node and so is responsible for automatic execution of all assigned tests and jobs, including the aftermath cleanups and recoveries.
+
+The tests by itself are performed through special Python scripts generated on the fly by the [[http://wikis.in.nokia.com/CI20Development/SaitPluginGuide][SAIT plugin]]. SAIT plugin also generates all the "test artifacts" or files required for test execution. The most important test artifacts to mention are flashable phone images, content images, pre-packaged test automation tools and various configuration files describing how and what should be tested in phone's software or functionality.
+
+This way SAIT plugin is responsible for generating, configuring and issuing tests on selected test farm, while the corresponding Test Automation Service is responsible for qeuing, allocating and managing received tests within currently available pool of devices, or the test farm.
+
+All concepts and connections between them are presented on the following overal picture:
+
+<img alt="Overal view of example testing system" src="%ATTACHURLPATH%/OveralConceptualView.png" />
+
+Here we've highlighted the most important roles that each part is playing. In order to enable automatic test executions, a "Team CI Jenkins N" server must use the SAIT plugin.
+
+In this particular example the CI 2.0 system creates a test description up from the SAIT plugin running on the "Team CI Jenkins" servers. A typical test description should contain a list of files to be used in the test, and some description of the products involved into testing: their RM codes or IMEI numbers.
+
+After the test description is created and send to a selected Test Automation Service (like to the TAS 1 in our example), the testing farm will automatically handle all the rest, like selecting a suitable node for test execution, downloading test artifacts from the CI 2.0 back-end systems and sending back generated test results after a successful test executions.
+
+
+
+---+++ How a single test is executed
+
+In its most simple case a single automatic test is executed in the following manner:
+
+1. SAIT plugin generates and prepares all the files required for executing the test on some devices
+
+2. When test artifacts are ready, a test description is delivered from SAIT plugin to the selected test farm's representative - the Test Automation Service application
+
+3. Test Automation Service application studies received test description and verifies it against currently available pool of devices
+
+4. Test Automation Service tries to reserve required devices as soon as possible, also taking in account all early queued tests
+
+5. When all required devices are successfully reserved for the test, Test Automation Service sends test description to the corresponding Test Automation Communicator application
+
+6. Test Automation Communicator receives test description and allocates a workspace for the test on local hard drive
+
+7. Test Automation Communicator starts transfering all required test artifacts from SAIT plugin to the test workspace on local hard drive
+
+8. When all artifacts are successfully transferred to the test node, Test Automation Communicator launches test execution script through a call to Python
+
+9. During the test all outputs from test execution script are send directly to the SAIT plugin for debugging and notification purposes
+
+10. When test execution script has finished its work, Test Automation Communicator studies test workspace for the generated test results and send them back to the SAIT plugin
+
+11. After that Test Automation Communicator informs SAIT plugin and Test Automation Service about a finished test
+
+12. Test Automation Service releases all reserved devices and starts executing the next test from the queue or waits for the new tests
+
+Any of the issued tests may be stopped from the SAIT plugin at any time. In some cases test execution will be stopped automatically, like for example when mentioned test artifacts will be not accessible for some reason or if Test Automation Service will recognise a phone being "dead" during the test execution. Also tests will be automatically stopped if their timeouts will become expired. All this done for keeping test farms reliably running and being as busy as possible, and for making test executions as fast as possible.
+
+
+
+---++ Test Automation Communications
+
+All parts and building blocks of TAS system are connected to each other over the TCP/IP connections. Every instance of a Test Automation Service is accessible from the network name of its hosting machine and dedicated TCP/IP port number. In the same way every Test Automation Communicator is accessible from the network name of its hosting Windows box and given TCP/IP port number.
+
+From the start-up configurations every Test Automation Communicator knows to which Test Automation Service (and so, testing farm) it belongs, turning its hosting computer into a test node inside that test farm.
+
+An example of such approach is shown on the following picture. Here an instance of the Test Automation Service (TAS 1) is running on some machine under port number 12345 and works as a representative of a test farm. All its Test Automation Communicators (COM 1, COM 2, COM 3, ..., COM n) are running on their computers under allocated port numbers. Since each Test Automation Communicator knows to which Test Automation Service it belongs (by using the start-up configurations), all these applications start forming a single test farm, where each part and building block is connected through the TCP/IP communications:
+
+<img alt="Test Farm Communications" src="%ATTACHURLPATH%/TestFarmCommunications.png" />
+
+Such network-based approach makes re-configurations of a testing farm very easy and fast. Test nodes may be switched on or off from the test farm without restart or re-configuration all other parts of that test farm. If some test node will fail or will switch off from the test farm, that will not crash its Test Automation Service or other Test Automation Communicators (the test nodes).
+
+---++ Installing and launching Test Automation Service components
+
+For creating and running a single test farm you'll need two application packages: one for the Test Automation Service (aka "master of the test farm") and at least one installation of a Test Automation Communicator (aka "slave in the test farm").
+
+The latests version of both the Test Automation Service and Test Automation Communicator may be obtained directly from the official build server: [[http://oucis004.europe.nokia.com:8080/job/Gerrit---S40%20TAS/]]
+
+Additionally you'll need a CI Proxy application package to be used together with the Test Automation Communicator.
+
+
+
+---+++ Installing and launching Test Automation Service
+
+Test Automation Service is a stand-alone Java application which requires the Java 6 runtime environment at least. There are no limitations on what hosting system you can run Test Automation Service applications, as long as there is a proper Java 6 runtime environment, and if TCP/IP network connections are made possible. Virtually you can run Test Automation Service on your computer or even on a test node inside your test farm. But it is recommended to run Test Automation Services on dedicated machines for easier maintenance and configuration.
+
+Each instance of the Test Automation Service application is remotely accessible over the standard TCP/IP connections through the "hostname:port" address, meaning that "hostname" is the official hostname of hosting machine, while "port" is the port number you manually assign to this particular instance of Test Automation Service application. This way you can run as many instances of the Test Automation Service applications on just the same machine as you have free ports or enough of computing resources.
+
+For installing and launching Test Automation Service application, simply follow the next steps:
+
+1. Visit page http://oucis004.europe.nokia.com:8080/job/Gerrit---S40%20TAS/ or ask Alexander Smirnov (ext-alexander.3.smirnov@nokia.com) for obtaining the latests binary packages of Test Automation Service
+
+2. Decide where you will run your TAS instance or instances
+
+<blockquote>
+Virtually you can run Test Automation Service anywhere where the standard Java Runtime Environment and TCP/IP networks are available. You can run it on your Windows computer or on dedicated Linux machine. Both platforms has their advantages and disadvantages. For example, Windows may be better if you just want to try Test Automation Service or if you lack some experience with Linux platforms. However, Windows machines are often rebooted after automatic security updates, so they are not providing a stable 24x7 hosting environment for the Test Automation Service instances. From the other hand, Linux may be a better choice if you already have a plan for the test farm and if you need the stable 24x7 hosting environment for your Test Automation Service instances.
+</blockquote>
+
+3. Create a directory for your Test Automation Service instance on the selected machine. For example, "C:\TAS" on Windows or "/home/your_username/tas" on Linux
+
+4. Put there =TestAutomationService.jar= file
+
+5. Open command line if you are on Windows, or shell if you are on Linux
+
+6. Type the following command to launch your Test Automation Service instance:
+
+<blockquote>
+<verbatim>
+java -jar TestAutomationService.jar TestAutomationServicePortNumber=YOUR_TAS_PORT_NUMBER TestAutomationServiceDescription="YOUR TAS DESCRIPTION"
+</verbatim>
+</blockquote>
+
+7. Check console outputs for any error or warning messages. A properly launched Test Automation Service should print something like this:
+
+<img alt="Test Automation Service's startup"  src="%ATTACHURLPATH%/TestAutomationServiceStartup.png" />
+
+<blockquote>
+If everything was fine, you should find day-by-day log files in the directory "logs". Statistics data about executed tests will be collected in directory "statistics", while directory called "workspace_for_tas_YOUR_TAS_HOSTNAME_YOUR_TAS_PORT_NUMBER" is used as occasional and temporary data storage.
+</blockquote>
+
+8. Visit the the following address in the Firefox browser: http://YOUR_TAS_HOSTNAME:YOUR_TAS_PORT_NUMBER where you should see the status page about your newly created Test Automation Service
+
+Please note that Linux and Windows are handling launched processes in different ways. After logout from your shell or command line session you may notice that Linux or Windows has shutted down your Test Automation Service instances. To prevent such behaviours, launch your Test Automation Service instances as background processes, which will stay working even after your logouts. For creating a background process in Linux, add the ampersand sign at the end of your launching command:
+
+<blockquote>
+<verbatim>
+java -jar TestAutomationService.jar TestAutomationServicePortNumber=YOUR_TAS_PORT_NUMBER TestAutomationServiceDescription="YOUR TAS DESCRIPTION" &
+</verbatim>
+</blockquote>
+
+For creating a background process in Windows, add the "start" prefix to your launching command:
+
+<blockquote>
+<verbatim>
+start java -jar TestAutomationService.jar TestAutomationServicePortNumber=YOUR_TAS_PORT_NUMBER TestAutomationServiceDescription="YOUR TAS DESCRIPTION"
+</verbatim>
+</blockquote>
+
+However, please note that Windows may stop or suspend any of your background processes during your logout. In such cases simply consider creation of a Windows service which will handle launching your Test Automation Service instances.
+
+For obtaining a list of all parameters available in launching Test Automatin Service, simply type the following command:
+
+<blockquote>
+<verbatim>
+java -jar TestAutomationService.jar --help
+</verbatim>
+</blockquote>
+
+If you had a proper launch of your Test Automation Service application on port "12345" and hosting machine "jamesbond007.europe.nokia.com", it means that your Test Automation Service is now available from the network address "jamesbond007.europe.nokia.com:12345". This is the address you should specify in the SAIT plugin to access this particular Test Automation Service (and so, the test farm that this service is representing); and this is the address you should specify in configurations of your Test Automation Communicators that you want be connected to this particular Test Automation Service.
+
+Please note that hostname extraction will be handled automatically by the Test Automation Service application. If it will fail to extract a hostname of machine with Java utilities, if will try to extract if from the environment settings. Namely by using the "HOST", "HOSTNAME" or "COMPUTERNAME" environment variables.
+
+For making a practical use of your Test Automation Service application, you need to get running at least one test node and connect its Test Automation Communicator to your newly created Test Automation Service.
+
+Up from its start Test Automation Service generates a default configuration file, called =configuration.dat= The =configuration.dat= will be stored in Test Automation Service launch directory and will contain the following default values:
+
+<blockquote>
+<verbatim>
+# All configuration settings supported by the Test Automation Service
+
+# Test default timeout in milliseconds (6 hours by default, or 21600000)
+test-default-timeout=21600000
+
+# Minimal execution time for a test in milliseconds (5 minutes by default, or 300000)
+test-minimal-execution-time=300000
+
+# Maximal number of running tests per test node (4 tests by default)
+maximal-number-of-tests-per-node=10
+
+# Maximal number of retries for a single failed test (1 by default)
+maximal-number-of-retries-for-failed-test=3
+
+# Test resources expectation timeout in milliseconds (15 minutes by default, or 900000)
+test-resources-expectation-timeout=900000
+
+# Statistics threshold period in milliseconds (7 days by default, or 604800000)
+statistics-threshold-period=604800000
+
+# Statistics update period in milliseconds (15 minutes 23 seconds by default, or 923456)
+statistics-update-period=923456
+
+# Remote client checking period in milliseconds (10 minutes by default, or 600000)
+remote-client-checking-period=600000
+
+# Default workload history period in days (7 days by default)
+workload-history-period=7
+
+# Duration of a single workload slice for daily statistics in milliseconds (5 minutes by default, or 300000)
+daily-workload-history-slice-duration=60000
+
+# Enabling (1) and disabling (0) maintenance mode on this Test Automation Service
+maintenance-mode=0
+</verbatim>
+</blockquote>
+
+You can adjust these settings as you need without any Test Automation Service restarts. However, please note that configuration changes are checked by the Test Automation Service each 5 minutes and only after that are taken into use. Here are explanations of all currently supported configuration properties.
+
+=test-default-timeout= - Specifies a default timeout for a test, which is 6 hours or 21600000 milliseconds by default. Please note that this value will be assigned only to the tests which hasn't specified any timeout values.
+
+=test-minimal-execution-time= - Specifies a minimal time that must be left from test's timeout before test will be actually launched on a selected test node. By default this value is set to 5 minutes or 300000 milliseconds.
+
+=maximal-number-of-tests-per-node= - Defines a maximal number of tests that are allowed to be executed in parallel on a single test node. By default this number is set to 4. Depending on the test nature and selected test tool, this number should be increased only when test nodes in the farm have sufficient computing resources (like large amounts of operating memory and multicore processors) and decreased when test nodes are representing some less powerful computing environments.
+
+=maximal-number-of-retries-for-failed-test= - Defines a maximal number of failures that a singe test job accepts during its lifetime. At the same time each failed test or sub-test will be restarted by TAS for as long as the total number of occured failures will be no greater than a number specified in the =maximal-number-of-retries-for-failed-test= parameter.
+
+=test-resources-expectation-timeout= - Specifies a timeout before tests will be failed due to missing required products or test nodes in the current test farm. By default this value is set to 15 minutes or 900000 milliseconds. Please note, that this timeout is not taken into account if test farm has some products suitable for a test, which are already occupied by some other tests. This timeout will be used only when a test farm will have no suitable products or test nodes at all, for example due to occured "dead" products or disconnecting test nodes.
+
+=statistics-threshold-period= - Specifies a time period during which statistical data is gathered. By default this period is set to 7 days or 604800000 milliseconds.
+
+=statistics-update-period= - Specifies a time period between statistics updates. By default this period is set to 15 minutes or 900000 milliseconds.
+
+=remote-client-checking-period= - Specifies a time period between checks of remote clients being still online. By default this period is set to 10 minutes or 600000 milliseconds and used in order to prevent any occasionally disconnected issuers of the tests.
+
+=workload-history-period= - Specifies a number of days for which workload history will be traced and displayed on the "Daily workloads" graphics. By default this period is set to 7 days. A workload day starts at 00:00:00 and ends on the same day at 23:59:59.
+
+=daily-workload-history-slice-duration= - Specifies duration of a single workload slice used on the "Test farm's utilization" graphics. By default this period is set to 5 minutes, or 300000 milliseconds. If a more precise graphics should be presented, this value could be decreased to 1 minute, or 60000 milliseconds. However, it is not recommended to decrease that parameter to less values, since graphically it will become undistinguishable anyway.
+
+=maintenance-mode= Enables (1) or disables (0) maintenance mode of the whole test farm. If maintenance mode is enabled, no tests will be forwarded to the test nodes and test farm's maintainers can easily make urgent or important updates on the available test nodes and products.
+
+Please note that any negative values in the =configuration.dat= file will be ignored.
+
+
+
+---+++ Installing and launching Test Automation Communicator
+
+Test Automation Communicator application is a stand-alone Java application which, however, relies on top of other very important applications and tools used for communicating with all products connected to a hosting computer. But first of all, you need to ensure a proper computing environment on your test node.
+
+Please follow the nest steps in preparing your test nodes before installing and launching Test Automation Communicators:
+
+1. Ensure that test node machine has at least 4 GB of operating memory and at least 10 GB of free disk space on its hard drive
+
+2. Visit page [[http://wikis.in.nokia.com/Granite/Installation]] and install everything mentioned there to enable Granite tool running on your test node
+
+3. Open FUSE application and add all devices there to your test node
+
+4. Open computer's power savings options and change them so that the computer will never go into sleep modes: hard disk and network should be always on, while monitor may be switched off
+
+5. Ensure that your test node has installed Java Runtime Environments, at least from Java version 6
+
+6. Ensure that your test node has in PATH system environment variable paths to Iron Python and Java Runtime Environment directories
+
+7. Open command line and type "ipy" command to check if Iron Python is properly installed; type "java" command to check if Java is properly installed
+
+If everything was fine until this point, you can start installing the Test Automation Communicator. For this, please follow the next steps:
+
+1. Visit page http://oucis004.europe.nokia.com:8080/job/Gerrit---S40%20TAS/ or ask Alexander Smirnov (ext-alexander.3.smirnov@nokia.com) for obtaining the latests binary packages of Test Automation Communicator
+
+2. Download CI Proxy application package from here: [[%ATTACHURL%/CIProxy.zip][CIProxy.zip]]
+
+3. Create directory "C:\TASCommunicator" on your test node, and put there contents of the =CIProxy.zip= archive together with the =TestAutomationCommunicator.jar= file
+
+4. Create a start.bat file with the following contents:
+
+<blockquote>
+<verbatim>
+call cls
+start "FUSE CI Proxy" CIProxy.exe
+call java -jar TestAutomationCommunicator.jar TestAutomationServiceHostname=YOUR_TAS_HOSTNAME.nokia.com TestAutomationServicePortNumber=YOUR_TAS_PORT_NUMBER --keep-workspaces-of-failed-tests
+</verbatim>
+</blockquote>
+
+The "--keep-workspaces-of-failed-tests" parameter is recommended to use during the deployment phases of a test farm. This option will allow you to keep stored workspaces of the failed tests for a deeper study or debugging. However, please note that Test Automation Communicator will automatically cleanup its workspace directory up on the start and delete everything stored there.
+
+5. Launch start.bat file and check for any error or warning messages
+
+<blockquote>
+If FUSE was installed properly, Test Automation Communicator should get notification about them through the CIProxy.exe application. In the directory "C:\TASCommunicator\products" you should see XML files, which has the same names as IMEI numbers of connected devices. An example configuration file can be always found from the path "C:\TASCommunicator\products\IMEI.xml" In the directory "C:\TASCommunicator\logs" you should see the logs files for each day that Test Automation Communicator was working.
+</blockquote>
+
+A properly launched Test Automation Communicator should print something like this:
+
+<img alt="Test Automation Communicator's startup" src="%ATTACHURLPATH%/TestAutomationCommunicatorStartup.png" />
+
+At the same time a properly launched and working CI Proxy application should print something like this:
+
+<img alt="A working CI Proxy" src="%ATTACHURLPATH%/TestAutomationCommunicatorCIProxyWork.png" />
+
+6. Open product XML files and change the settings according to your needs
+
+The default contents of a product XML file might look like the following, please pay attention to the comments:
+
+<blockquote>
+<verbatim>
+<?xml version="1.0" encoding="UTF-8"?>
+<product>
+    <!-- Name of the FUSE connection that was assigned to this product on this particular test node -->
+    <fuse-connection-name>USB4</fuse-connection-name>
+
+    <!-- Id of the FUSE connection that was assigned to this product on this particular test node -->
+    <fuse-connection-id>GConnId_5685fac9315e41bd</fuse-connection-id>
+
+    <!-- IMEI number of the product -->
+    <imei>004402136230483</imei>
+
+    <!-- RM code of the product -->
+    <rm-code>RM-763</rm-code>
+
+    <!-- Hardware type of the product, usually in form "X1" -->
+    <hardware-type></hardware-type>
+
+    <!-- Role of the product in test farm -->
+    <role>main</role>
+
+    <!-- Current status of the product -->
+    <status>free</status>
+
+    <!-- Some details related to the current status of the product -->
+    <status-details></status-details>
+
+    <!-- Hostname of the Test Automation Service this product belongs to -->
+    <tas-hostname>YOUR_TAS_HOSTNAME</tas-hostname>
+
+    <!-- Port number of the Test Automation Service this product belongs to -->
+    <tas-port>YOUR_TAS_PORT_NUMBER</tas-port>
+
+    <!-- Hostname assigned to the product by the Test Automation Communicator -->
+    <hostname>hostname.domain.com</hostname>
+
+    <!-- IP address assigned to the product by the Test Automation Communicator -->
+    <ip>172.255.23.255</ip>
+
+    <!-- TCP/IP port number assigned to the product by the Test Automation Communicator -->
+    <port>15001</port>
+
+    <!-- Free form description of the enrivonment that this particular device may provide to a test, like "Bluetooth", "Mobile operator ABC", etc. -->
+    <environment></environment>
+
+    <!-- Set of configurations related to the 1st (or only) SIM card available to the product -->
+    <sim1>
+        <!-- Phone number (or MSISDN) assigned to this SIM card -->
+        <phone-number></phone-number>
+
+        <!-- The 1st and the 2nd Personal Identification Number codes -->
+        <pin1>1234</pin1>
+        <pin2>2222</pin2>
+        
+        <!-- The 1st and the 2nd PIN Unblocking Key codes -->
+        <puk1>11111111</puk1>
+        <puk2>22222222</puk2>
+        
+        <!-- A security code assigned to the SIM card -->
+        <security-code>12345</security-code>
+        
+        <!-- International Mobile Subscription Identity number, which identificates this SIM card -->
+        <imsi></imsi>
+        
+        <!-- Service dialling number associated with the SIM card -->
+        <service-dialling-number></service-dialling-number>
+        
+        <!-- Number of a voice mailbox -->
+        <voice-mailbox-number></voice-mailbox-number>
+    </sim1>
+    <!-- Set of configurations related to the 2nd SIM card available to dual-SIM card product -->
+    <sim2>
+        <phone-number></phone-number>
+        <pin1>1234</pin1>
+        <pin2>2222</pin2>
+        <puk1>11111111</puk1>
+        <puk2>22222222</puk2>
+        <security-code>12345</security-code>
+        <imsi></imsi>
+        <service-dialling-number></service-dialling-number>
+        <voice-mailbox-number></voice-mailbox-number>
+    </sim2>
+</product>
+</verbatim>
+</blockquote>
+
+Currently Test Automation Service supports products in "main", "remote" or "reference" roles. By default all products are set into "main" role. A product in "main" role can be flashed during the test. If you don't want a product to be flashed at any point, please change its role to the "reference". The third supported role is "remote" and is used for the products which could be flashed during the test, but which may also work as a remote part in communication tests.
+
+Also notice that if phone number will be not specified for the SIM card, that SIM card will be considered as inavailable or disabled. All phone numbers must be specified in international form, i.e. starting from "+" and country code.
+
+7. Please always remember that you should run only ONE instance of CIProxy.exe application on your test node and only ONE instance of Test Automation Communicator
+
+8. If you have a running Test Automation Service, please visit the the following address in the Firefox browser: http://YOUR_TAS_HOSTNAME:YOUR_TAS_PORT_NUMBER where you should see your newly added test node with all its connected products
+
+For obtaining help about all available launching parameters, simply the following command:
+
+<blockquote>
+<verbatim>
+java -jar TestAutomationCommunicator.jar --help
+</verbatim>
+</blockquote>
+
+Here is the current set of all parameters supported by the Test Automation Communicator:
+
+<blockquote>
+<verbatim>
+TestAutomationServiceHostname=<host.name> - Hostname of the machine where Test Automation Service is running
+
+TestAutomationServicePortNumber=<number> - Port number that Test Automation Service is using for incoming communications
+
+TestAutomationCommunicatorPortNumber=<number> - Specify port number to be used by Communicator, if the default port 27182 is not available
+
+TestAutomationCommunicatorDescription="<string>" - A short description about this Communicator instance
+
+--keep-workspaces-of-failed-tests - Will force Communicator to preserve workspaces of failed tests only
+
+--keep-workspaces-of-all-tests - Will force Communicator to preserve workspaces of all tests ever issued on this test node
+</verbatim>
+</blockquote>
+
+
+
+---++ Test Automation Service concepts and protocol
+
+The protocol designed for Test Automation Service is based on simple and asynchronous XML messaging, and takes care about all aspects of executing tests and managing available test farm resources.
+
+The main concepts used by Test Automation Service protocol are called "test" and "product". While "products" are describing mobile devices available from the test farm, the "tests" are defining what resources and products should be involved in executing the final test.
+
+
+
+---+++ Test
+
+One of the most important objects in Test Automation Service is test description. Tests are issued by the SAIT plugin and automatically executed on selected test nodes inside the available test farms. For enabling a high degree of test automation each test should have a sufficient description of its configuration parameters, artifacts and resources required for test execution.
+
+An example of a detailed test description looks like the following (please pay attention to comments):
+
+<blockquote>
+<verbatim>
+<!-- Base format for describing a test perfomed inside the Test Automation Service -->
+<!-- All test descriptions are always encoded in the UTF-8 format -->
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The "test" root element contains all data required to describe a test -->
+<test>
+    <!-- Test id is always mandatory and it cannot contain any characters that are not accepted by Linux and Windows file systems and by the XML 1.0 standard -->
+    <id>Test id</id>
+
+    <!-- Path to the directory where the test artifacts were originally generated or stored on the side of SAIT plugin -->
+    <workspace-path>/path/to/test/artifacts/</workspace-path>
+    
+    <!-- A URL optionally related to the test -->
+    <url>http://test_build_machine_1.domain.com/test_workspace/</url>
+
+    <!-- Target is always mandatory and tell if reserved products will be flashed (in case of "flash" target) or emulated (in case of "nose" target) -->
+    <target>flash | nose</target>
+
+    <!-- Product releasing mode is mandatory and tells if reserved products will be released automatically by the Test Automation Service or manually by the test issuer -->
+    <product-releasing-mode>automatic | manual</product-releasing-mode>
+    
+    <!-- Product disconnection timeout in milliseconds -->
+    <product-disconnection-timeout>1234567890</product-disconnection-timeout>
+
+    <!-- Current status of the test -->
+    <status>unknown | pending | started | stopped | finished | failed</status>
+
+    <!-- Some additional information related to the test's current status, if available -->
+    <status-details>...</status-details>
+
+    <!-- Timestamp of the moment (since Unix epoch) when test was started executing on the test node -->
+    <start-time>1234567890123</start-time>
+
+    <!-- Timeout of the test in milliseconds -->
+    <timeout>1234567890</timeout>
+
+    <!-- Name of the application which will be responsible for actual performing of the test on a test node -->
+    <executor-application>ipy.exe</executor-application>
+
+    <!-- Name of the script or other application which will be responsible for test's workflow after launching on a test node -->
+    <executor-script>script.py</executor-script>
+
+    <!-- A list of all files involved in the test, called "test artifacts" in Test Automation Service terminology. Test artifacts also include the executor script, since it is also delivered to the test node. But the executor application is assumed to be a resident of the test node, like Iron Python or Perl. Otherwise it should be also delivered to the test node as one of the test's artifacts -->
+    <artifacts>
+        <!-- Each test artifact is identificated by its filename relative to the test's workspace path -->
+        <artifact>Filename1.abc</artifact>
+        <artifact>Filename2.efg</artifact>
+        <artifact>Filename2.hjk</artifact>
+                      ...
+        <artifact>FilenameN.zyx</artifact>
+    </artifacts>
+
+    <!-- Name of the file which will contain results of the test (logs, reports, dumps, etc.) that executor script should generate together with the executor application after the test is finished on the test node. Usually this is simply a ZIP archive file containing the files that SAIT should be aware of -->
+    <results-filename>Filename1.xyz</results-filename>
+    
+    <!-- An expression describing the list of products required for test execution -->
+    <required-products-expression>(imei:123456789012345;) and (rm-code:RM-123;role:reference;) and (sim1-phone-number:+3585555243436;role:remote;)</required-products-expression>
+
+    <!-- A list of all products required to perform this test (can be empty if test has specified the expression for required products or "nose" target) -->
+    <required-products>
+        <!-- The list of required products is populated by the test issuer and contents of each product element are heavily depending on the test configuration -->
+        <product>
+            Description of required product 1...
+        </product>
+        <product>
+            Description of required product 2...
+        </product>
+           ...
+        <product>
+            Description of required product N...
+        </product>
+    </required-products>
+
+    <!-- A list of all products reserved for this test (can be empty if test has specified the "nose" target) -->
+    <reserved-products>
+        <!-- The list of reserved products is populated by the Test Automation Service after the products were successfully reserved from the test farm -->
+        <product>
+            Description of reserved product 1...
+        </product>
+        <product>
+            Description of reserved product 2...
+        </product>
+           ...
+        <product>
+            Description of reserved product N...
+        </product>
+    </reserved-products>
+</test>
+</verbatim>
+</blockquote>
+
+All the fields used in test description are used at different steps of test execution. Each component of the Test Automation Service may utilize different elements of a test description in its own way. However, depending on implementation each component may ignore some specified elements of the test description if such elements are not required for the mentioned operation or action on the test.
+
+
+
+---++++ Id
+
+Each test must have a unique id. Test id may contain any charactars that are acceptable by Linux and Windows file systems for directory and file names and by the XML 1.0 standard. If test id will contain some unallowed characters, it will be automatically failed by the Test Automation Service right from the start.
+
+
+
+---++++ Workspace path
+
+Test's workspace path is the place where test's artifacts (or required files) are stored. Usually this is a path to Linux directory where SAIT plugin has build and prepared all the files necessary to execute test on a test node.
+
+
+
+---++++ URL
+
+Test's URL may optionally direct to the place where test configuration, description, logs or artifacts are stored.
+
+
+
+---++++ Target
+
+The "target" element describes the nature of test and helps Test Automation Service to allocate the best test node for the test. The "flash" target is meaning that phone flashing will be required during the test, while "nose" target tells Test Automation Service that test requires only NoSE emulation environments.
+
+On the other hand, if the "flash" target is mentioned, it doesn't mean that products under test must be flashed. It simply informs Test Automation Service that test execution requires some physical devices, while the decision and performing product flashing is actually left to the SAIT plugin.
+
+
+
+---++++ Product releasing mode
+
+If the "flash" target is specified, it will lead to reservation of some physical devices from the test farm. Since the resources of all test farms are shared among all test issuers, we need to ensure that any reserved resources are released after the test execution. In many cases this is done automatically by the Test Automation Service. Such cases are indicated by the "automatic" value in the "product-releasing-mode" element of a test description.
+
+However, some test routines might require that physical device will stay reserved after the test execution. For example, if test is splitted into several sequenced or parallel steps. In this case test description may specify the "manual" "product-releasing-mode" but it will be the obligation of a test issuer to release any manually reserved products after test execution.
+
+
+
+---++++ Product disconnection timeout
+
+If some product has disconnected during the test, the "product disconnection timeout" will tell for how much time this product may be disconnected from the test node. If a disconnected product will not get back online during this timeout, the test will be failed. This is done in order to prevent "dead" products occured due to bad flashing or invalid flashable contents. The timeout is specified in milliseconds and by default is 5 minutes long.
+
+
+
+---++++ Status
+
+A test may have one of the following statuses: "unknown", "pending", "started", "stopped", "finished", "failed".
+
+By default all tests get the "unknown" status at their creation. After a test is delivered to the Test Automation Service for execution, it gets "pending" status, meaning that test is waiting for all required test resources. Once all test resources are successfully gathered, the test is send to the selected test node for its actual execution. In its turn the test node starts preparing environment for the test execution and if everything goes fine, it sets the test into "started" status. Otherwise it will set test into the "failed" status.
+
+When test execution is successfully over, the test node sets test into "finished" status. A "successful" test execution doesn't mean that test results were successful or test has successfully passed all its cases. It rather means that Test Automation Service has successfully launched test on a test node and delivered all generated test results back to the SAIT plugin (and so, back to the CI 2.0 back-ends).
+
+When test is forced to stop, it gets the "stopped" status and so, each component of the Test Automation Service will try to perform all the necessary cleanups in order to automatically release all occupied test resources and let the other tests be executed.
+
+
+
+---++++ Status details
+
+At every step that is taken during the test execution, any Test Automation Service components may put additional information into the "status details" field regarding the current status of the test. "Status details" has informative nature and is used for a better description of test's workflow. For example, the reason of test's failure is set as "status defails", as well as the reason of test's stop.
+
+
+
+---++++ Start time
+
+Every successfully started test remembers the moment of time when it has started its executions. The momemnt of start time is calculated from the beginning of Unix epoch. Such approach is quire universal among many programming and scripting languages and so, can be easily used on many platforms. The default and automatically assigned "start time" value is 0.
+
+
+
+---++++ Timeout
+
+In order to prevent jammed tests and forewer reserved products, each test specifies its timeout. The timeout is specified in milliseconds and by default is 6 hours long. Issuers of the tests are free to set up any other values and it's good to remember that all hardware and software resources reserved for the test execution will also get the same timeout values at their reservations. Please notice that current implementation of the Test Automation Service will use timeout value starting from the receiving of a test description, and not from the moment when test execution is actually started on a test node. This is done in respect to the time that was spend on reserving test resources from the test farm and prioritizing any earlier issued tests.
+
+
+
+---++++ Executor application and executor script
+
+Every test node is executing test by using so-called "executor application" and "executor script". Current implementations of the SAIT plugin and Test Automation Service are using Iron Python as "executor application" and generated on-the-fly Python programs as "executor scripts".
+
+This gives SAIT and Test Automation Service to separate test handling from the actual test workflow. Additionally this allows to separate internals of the Test Automation Service from all the technical details that are required to use different testing tools that SAIT may optionally add or remove in the future.
+
+The Iron Python is the default "executor application" seleted for running all the tests inside Test Automation Service. This tool was selected by the Granite testing tool and so, should be anyway available on every single test node where Granite tool will be used. Being so, the Iron Python is considered as a resident of the test node and is never carried to the test execution but rather properly installed up from the test node initialization. This way "executor application" is always set to "ipy" value right at the test creation.
+
+In its turn, when the SAIT plugin is issuing a new test, it generates on-the-fly a corresponding "execution script" which will handle the actual workflow of the test on a test node. Such "test executor script" will be then executed on a test node by the "test executor application" (Iron Python in our case).
+
+This way Test Automation Service doesn't actually know what will be involved in actual test executions or how test will be executed at the end. In a similar way SAIT plugin doesn't know where exactly test will be executed, assuming only that it will be one of the test nodes made available by the Test Automation Service.
+
+Since the "test executor script" is a generated Iron Python program, it should be delivered to the test node together with all the test artifacts (or files, involved in test execution). Being so, "executor script" is automatically added to the list of test artifacts.
+
+Theoretically nothing prevents us from sending "executor application" together with test artifacts to the test node. In fact, "executor application" might be simply an executable application which knows how to use the products reserved for the test execution. However, in this case issuer of such test should take full responsibility in adequate behaviour of such application on the test node and later consistency of the test node, testing farm and test results interpretation.
+
+
+
+---++++ Artifacts
+
+Each test execution involves a set of files or applications which should be delivered to the test node for their actual usage or work. For example, "executor script", flashable phone images, phone content and configuration files, and testing tools are always required to perform some useful testing and so, are always should be copied from the CI 2.0 back-ends to the selected test node. This is usally done through mention of all required test "artifacts", or files involved in test execution.
+
+Test "artifacts" are specified simply by their file names, as they are in specified test's workspace. Later, when test node will start actual execution of the test, it will request all mentioned test "artifacts" by special messages and by using their names from the SAIT plugin. In its order, SAIT plugin will send back all required test "artifacts" (including the "executor script").
+
+Only when all test "artifacts" are successfully delivered to the test node, the node will launch "executor script" through the "executor application" to perform actual testing. If some of the requested test "artifacts" will not be delivered to the test node within 10 minutes, the test will be automatically failed. Otherwise "executor script" will use all delivered test "artifacts" and will do the testing.
+
+
+
+---++++ Results filename
+
+In current implementation of the Test Automation Service all test results must be stored inside one file and send back to the SAIT plugin. A file with test results is automatically generated by the "test executor script" and usually represents a single archive containing all valuable logs, reports and outputs from the testing tools.
+
+If test results file is left unspecified, then test results file will be not tried to be delivered to the SAIT plugin. Otherwise test node will try automatically to pick up specified file from the test's workspace and send it back to the SAIT plugin.
+
+If sending of the test results file will be unsuccessful or failed (for example, due to network of test's workflow issues) the test will be automatically failed. Otherwise test will get the "finished" status only when test results file is successfully transferred from test node to the SAIT plugin (and so, CI 2.0 back-ends).
+
+
+
+---++++ Required products expression
+
+If test involves some physical products, a list of matching criterias for required products could be specified as a single expression, notifying the following syntax:
+<blockquote>
+<verbatim>
+(The 1st required product parameters) and (The 2nd required parameters) and (...) and (The Nth required product parameters)
+</verbatim>
+</blockquote>
+
+In the mentioned expression every required product's parameters are enclosed with the round brackets. Each such bracketed group represents a single product required for test execution. If you will specify N such groups, that will put a requirement for Test Automation Service to allocate exactly N products on a suitable test node to start test execution.
+
+Each product parameter must follow the =parameter-name:value;= format. The number of name-value pairs that you can use for specifying a product isn't anyhow limited.
+
+The following name-value pairs are supported for describing a required product:
+
+<blockquote>
+<verbatim>
+Name-value pairs supported in product descriptions:
+
+    fuse-connection-name:Name; - To specify FUSE connection name
+    fuse-connection-id:Id; - To specify FUSE connection ID
+    imei:012345678901234; - To specify product's IMEI number
+    rm-code:RM-123; - To specify product's RM code
+    hardware-type:HW007; - To specify product's hardware type
+    role:main/remote/reference; - To specify product's role
+    status:free/busy/disabled; - To specify product's status
+    status-details:Some status details; - To specify product's status details
+    reservation-time:1358851448567; - To specify product's reservation time in millseconds
+    reservation-timeout:1358851448567; - To specify product's reservation time in millseconds
+    disconnection-time:1358851448567; - To specify product's disconnection time in millseconds
+    tas-hostname:tas-hostname123.domain.com; - To specify hostname of the Test Automation Service where to product belongs
+    tas-port:12345; - To specify port number of the Test Automation Service where to product belongs
+    hostname:hostname123.domain.com; - To specify hostname of Test Automation Communicator that is handling this product
+    ip:10.20.234.241; - To specify product's IP address
+    port:12345; - To specify product's TCP/IP port number
+    environment:Some free form description; - To specify an environment expected on the product
+
+Name-value pairs supported in description of the first (or only) SIM card of the same product:
+
+    sim1-phone-number:+3585555243436; - To specify SIM card's phone number
+    sim1-pin1:1234; - To specify the first PIN code of SIM card
+    sim1-pin2:4321; - To specify the second PIN code of SIM card
+    sim1-puk1:12345678; - To specify the first PUK code of SIM card
+    sim1-puk2:87654321; - To specify the second PUK code of SIM card
+    sim1-security-code:12345; - To specify SIM card's security code
+    sim1-imsi:244070123456789; - To specify SIM card's IMSI number
+    sim1-service-dialling-number:+3585555243437; - To specify service dialling number associated with the SIM card
+    sim1-voice-mailbox-number:+3585555243438; - To specify voice mailbox number associated with the SIM card
+
+Name-value pairs supported in description of the second SIM card, possibly available to the same product:
+
+    sim2-phone-number:+3585555243439; - To specify SIM card's phone number
+    sim2-pin1:1234; - To specify the first PIN code of SIM card
+    sim2-pin2:4321; - To specify the second PIN code of SIM card
+    sim2-puk1:12345678; - To specify the first PUK code of SIM card
+    sim2-puk2:87654321; - To specify the second PUK code of SIM card
+    sim2-security-code:12345; - To specify SIM card's security code
+    sim2-imsi:244070123456791; - To specify SIM card's IMSI number
+    sim2-service-dialling-number:+3585555243440; - To specify service dialling number associated with the SIM card
+    sim2-voice-mailbox-number:+3585555243441; - To specify voice mailbox number associated with the SIM card
+</verbatim>
+</blockquote>
+
+So, for example, an expression =(imei:012345678901234;) and (rm-code:RM-123;role:reference;)= will specify two products to be used in a test: the first one with IMEI number "012345678901234" and the second one with RM code "RM-123" being also in the "reference" role.
+
+An expression =(rm-code:RM-123;sim2-imsi:244070123456789;hostname:TestNode007.europe.nokia.com;)= will allocate you some "main" product with RM code "RM-123" and with the second SIM card's IMSI number "244070123456789" on a test node with hostname "TestNode007.europe.nokia.com".
+
+If test will require only a single product, then grouping of product parameters in expression could be totally omited, like for example in expression =imei:012345678901234;= In this case Test Automation Service will try to allocate a product with IMEI "012345678901234" for the test execution.
+
+Please note that "role" parameter could be skipped, since by default Test Automation Service will always try to use products being in "main" role. However, it is always good to remember that current implementation of test node's underlying software components simply cannot automatically extract many of product's parameters, like for example SIM card's phone numbers and security codes. So, if your test configuration relies on some of these parameters, please ensure that your test farm has a sufficient number of devices with all the necessary parameters predefined.
+
+Using expressions for specifying a list of required products can bring you more freedom and flexibility in selecting devices that your test or test configurations might need. However, you should use expressions very carefully, since they could also limit or even disable your test executions due to occured dynamic changes in the testing farms.
+
+Also for example it's possible to specify only a "hostname" for required product and Test Automation Service will find you the first most suitable device. But that device might become destroyed due to improper image flashing or anything like that.
+
+
+
+---++++ Required products
+
+All required products could be also specified explicitly as a list of "required products". In such case each required product object should specify its own valuable parameters. A list of "required products" is required only for the test with "flash" target. If a test with "flash" target will not specify a list of required products, it will be automatically failed by the Test Automation Service. Any tests with the "nose" target may skip specifying required products.
+
+
+
+---++++ Reserved products
+
+When test gets some successfully reserved products for its executions, it gets populated the list of "reserved products" with the defailed information about these reserved products. If test's product releasing mode was "manual", that information must be used by the test issuer for releasing reserved products after test execution. Otherwise this information is simply used for notifying test issuer about what products were actually reserved and used in test executions.
+
+
+
+
+
+
+
+---+++ Product
+
+Right now all products are meaning mobile phones connected to their test nodes - standalone computers with the necessary software installed. Since each Nokia phone has some common properties in their descriptions, these characteristics were used in describing products inside the test farms that Test Automation Service is handling. For example, the IMEI number, RM code and hardware type or a phone are such common properties. These parameters are used by the Test Automation Service to distinguish devices from each other inside the same test farm.
+
+However, since products are always attached to the test nodes, some of the characteristics describing a product also comes from the test node. For example, FUSE-related connection name and id, IP address and port number assigned to the product are always defined by the test nodes.
+
+Some other product parameters, like Test Automation Service hostname, Test Automation Service port number, status, status details, reservation time and reservation timeout are always defined by the Test Automation Service itself and in some cases by the Test Automation Communicator.
+
+In contrast to this, the role of a product is always specified by the maintainer of the test farm, just like the parameters of the SIM cards available to the product.
+
+An example of complete XML description of a product looks like the following (please pay attention to comments):
+
+<blockquote>
+<verbatim>
+<!-- Base format for describing a product available to the Test Automation Service inside its test farm -->
+<!-- All product descriptions are always encoded in the UTF-8 format -->
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The "product" root element contains all data required to describe a product -->
+<product>
+    <!-- The FUSE connection name is used to identificate product connection on the test node -->
+    <fuse-connection-name>NFPD USB_FPS21</fuse-connection-name>
+
+    <!-- The FUSE connection id is used to identificate product connection on the test node -->
+    <fuse-connection-id>Guid_0123456789</fuse-connection-id>
+
+    <!-- IMEI code of the product -->
+    <imei>000000000000001</imei>
+
+    <!-- RM code of the product -->
+    <rm-code>RM-123</rm-code>
+
+    <!-- Hardware type of the product -->
+    <hardware-type>X1</hardware-type>
+
+    <!-- Role assigned to the product by the test farm's maintainer -->
+    <role>main | remote | reference</role>
+
+    <!-- Current status of the product assigned by the Test Automation Service or Communicator -->
+    <status>free | busy | disabled</status>
+
+    <!-- Some additional information related to product's current status, if available -->
+    <status-details>...</status-details>
+
+    <!-- Timestamp of the moment (since Unix epoch) when product was reserved for some test or task -->
+    <reservation-time>1234567890123</reservation-time>
+
+    <!-- Timeout of the product's reservation in milliseconds -->
+    <reservation-timeout>1234567890</reservation-timeout>
+
+    <!-- Timestamp of the moment (since Unix epoch) when product has disconnected for the test node during some test or task -->
+    <disconnection-time>1234567890123</disconnection-time>
+
+    <!-- Hostname of the Test Automation Service that product belongs to -->
+    <tas-hostname>some-test-automation-service.hostname.com</tas-hostname>
+
+    <!-- Port number of the Test Automation Service that product belongs to -->
+    <tas-port>12345</tas-port>
+    
+    <!-- Hostname assigned to the product by the Test Automation Communicator -->
+    <hostname>hostname.domain.com</hostname>
+
+    <!-- IP address assigned to the product by the Test Automation Communicator -->
+    <ip>172.23.127.256</ip>
+
+    <!-- TCP/IP port number assigned to the product by the Test Automation Communicator -->
+    <port>15001</port>
+	
+    <!-- Free form description of the enrivonment that this particular device may provide to a test, like "Bluetooth", "Mobile operator ABC", etc. -->
+    <environment></environment>
+
+    <!-- Description of the 1st (or only) SIM card available to the product -->
+    <sim1>
+        <!-- Phone number (or MSISDN) assigned to this SIM card. Empty phone number means that SIM card is not used -->
+        <phone-number>+3585550000001</phone-number>
+
+        <!-- The 1st and the 2nd Personal Identification Number codes -->
+        <pin1>1234</pin1>
+        <pin2>1234</pin2>
+
+        <!-- The 1st and the 2nd PIN Unblocking Key codes -->
+        <puk1>12345</puk1>
+        <puk2>12345</puk2>
+
+        <!-- A security code assigned to the SIM card -->
+        <security-code>12345</security-code>
+
+        <!-- International Mobile Subscription Identity number, which identificates this SIM card -->
+        <imsi>244070103300372</imsi>
+
+        <!-- Service dialling number associated with the SIM card -->
+        <service-dialling-number>+3585550000010</service-dialling-number>
+
+        <!-- Number of a voice mailbox -->
+        <voice-mailbox-number>+3585550000011</voice-mailbox-number>
+    </sim1>
+
+    <!-- Description of the 2nd SIM card available to the dual-SIM product -->
+    <sim2>
+        <phone-number></phone-number>
+        <pin1></pin1>
+        <pin2></pin2>
+        <puk1></puk1>
+        <puk2></puk2>
+        <security-code></security-code>
+        <imsi></imsi>
+        <service-dialling-number></service-dialling-number>
+        <voice-mailbox-number></voice-mailbox-number>
+    </sim2>
+</product>
+</verbatim>
+</blockquote>
+
+Some of the parameters mentioned in product configuration are optional and might be skipped, some of the parameters are mandatory and must be always specified. Whenever it is possible, the Test Automation Service and Communicator automatically take care about keeping product configurations updated, while some of the product parameters must be specified manually by the maintaners of a test farm.
+
+
+
+---++++ FUSE connection name and id
+
+Every product connected to the test node within Test Automation Service farm should be traced by Nokia's FUSE application. FUSE application will require to assign a name for product connection and will automatically generate a connection id for it. Later these FUSE credentials will be used by testing tools to find and use physical products attached to the actual work.
+
+The FUSE connection name and id are automatically extracted from the connected product by a special application called "CI Proxy" working together with the Test Automation Communicator on a test node and stored in corresponding product's configuration file. Whenever Test Automation Communicator will recognize a change in product's FUSE connection name or id, it will automatically update the corresponding product's configuration file.
+
+
+
+---++++ IMEI number
+
+Every product within the Test Automation Service farm must have a unique IMEI number. The IMEI number is automatically extracted from the connected product by a special application called "CI Proxy" working together with the Test Automation Communicator on a test node and stored in corresponding product's configuration file.
+
+
+
+---++++ RM code
+
+Each product within the Test Automation Service farm must have its RM code, which could be used in specifying a type of the products involved in testing. The RM code is automatically extracted from the connected product by a special application called "CI Proxy" working together with the Test Automation Communicator on a test node and stored in corresponding product's configuration file.
+
+
+
+---++++ Hardware type
+
+Each product within the Test Automation Service farm might have a "hardware type" specified for a more precise specification of the product internals. Currently hardware type must be specified manually by a maintainer of the test farm right in the product's configuration file. By default a hardware type is not specified and is not yet required for products to be used in Test Automation Service farms.
+
+
+
+---++++ Role
+
+Each product inside the Test Automation Service farm has its role. Currently product may have "main", "remote" or "reference" role.
+
+The "main" role is default and automatically assigned to a product if other role is not specified. If product is in "main" role, it can be flashed by flashing tools to update system's software or applications and so, become the so-called "device under the test", or "DUT".
+
+The "remote" role is usually assigned to the products being a "remote part" in communication tests. The "remote" products might be also flashed by the flashing tools and so, also become the "devices under test".
+
+The "reference" role is for the products which have stable and trusted combination of hardware and software components and so, may be relied as referencies in various tests. "Reference" devices are not allowed to be flashed during the tests issued by the Test Automation Service.
+
+Currently product role must be specified manually by a maintainer of the test farm right in the product's configuration file.
+
+
+
+---++++ Status
+
+Each product within the Test Automation Service farm may get updated it status into the following values: "free", "busy" or "disabled".
+
+When product is "free", it can be reserved by any test that has requested it from the Test Automation Service farm.
+
+A product becomes "busy" when it is reserved for some test or operation within the Test Automation Service. Current version of Test Automation Service will store id of the test that has reserved a product in its "status details". When test or operation is over and product is released, it becomes "free" once again. If a product gets some improper configuration, it will become "disabled". As soon as configuration will become a correct one, the product will get the "free" status again.
+
+The product status is automatically set and updated by Test Automation Communicator or Service in corresponding product's configuration file.
+
+
+
+---++++ Status details
+
+Test Automation Service components may put additional information into the product "status details" field regarding the current status of the product. "Status details" has informative nature and is used for a better description of product's status or usage. For example, product's "status defails" will be set to the id of a test that has currently reserved this product of its needs.
+
+The product status details are automatically set and updated by Test Automation Communicator or Service in corresponding product's configuration file.
+
+
+
+---++++ Reservation time
+
+Every successfully reserved product remembers the moment of time when it was reserved by some test. The moment of product reservation time is calculated from the beginning of Unix epoch. Such approach is quire universal among many programming and scripting languages and so, can be easily used on many platforms. The default and automatically assigned "reservation time" value is 0.
+
+The product reservation time is automatically set and updated by Test Automation Communicator or Service in corresponding product's configuration file.
+
+
+
+---++++ Reservation timeout
+
+In order to prevent forewer reserved products, each product gets a reservation timeout. The timeout is specified in milliseconds and by default is 6 hours long. The timeout of a product will be set exactly to the same timeout value that corresponding reserving test has.
+
+The product reservation timeout is automatically set and updated by Test Automation Communicator or Service in corresponding product's configuration file.
+
+
+
+---++++ Disconnection time
+
+If a product has disconnected from the test node during some test or task, the "disconnection time" parameter should keep a moment of time when such disconnection happened. The moment of product disconnection time is calculated from the beginning of Unix epoch. Such approach is quire universal among many programming and scripting languages and so, can be easily used on many platforms. The default and automatically assigned "disconnection time" value is 0.
+
+The product disconnection time is automatically set and updated by Test Automation Communicator or Service in corresponding product's configuration file.
+
+
+
+---++++ Test Automation Service hostname and port number
+
+Each product remembers the hostname and port number of a Test Automation Service it belongs to. This information may be later used by testing tools or monitoring facilities used in Test Automation Service.
+
+The Test Automation Service hostname and port number are automatically set and updated by Test Automation Communicator in corresponding product's configuration file.
+
+
+
+---++++ Hostname, IP address and port number
+
+Each product remembers the hostname, IP address and port number that CI Proxy application and Test Automation Communicator has assigned to it. This makes products available for testing purposes over the standard TCP/IP communications.
+
+The product's hostname, IP address and port number are automatically set and updated by Test Automation Communicator and CI Proxy application in corresponding product's configuration file.
+
+
+
+---++++ Environment descriptions
+
+Maintainers and users of the test farm may add free form descriptions about the environments provided through the product. Currently the vocabulary describing an environment is not anyhow standardised, and for example specifying that you can get traces from the product, you can easily put word "traces" inside the "environment" parameter. Also you can easily put locations, mobile operators, and any other important information that your test job specification understands and needs.
+
+
+
+---++++ SIM cards
+
+Current implementation of the Test Automation Service support as single-SIM as dual-SIM products. However, due some technical limitations all data regarding the SIM cards should be updated manually by a maintaner of Test Automation Service farm in the corresponding configuration file of product.
+
+Current set of supported elements of a SIM card configuration includes "phone number", "PIN 1" and "PIN 2" codes, "PUK 1" and "PUK 2" codes, "security code", "IMSI" number, "service dialling" and "voice mailbox" numbers.
+
+Each product connected to the test node automatically gets a templated configuration file where both the "1st SIM card" (or "sim1") and the "2nd SIM card" (or "sim2") parameters are presented. The maintainer of a test farm should manually specify a block of parameters for each available SIM card on the product.
+
+For example, if product is a single-SIM product, then only the "sim1" block of parameters should be specified. If product is a dual-SIM card product, then both the "sim1" and "sim2" blocks of parameters should be populated with some values. Otherwise, product will be considered as not having any SIM cards and may possibly fail some communication tests.
+
+Please note, that by default parameters of SIM cards are not specified and are not yet required for products to become available to the Test Automation Service farms, but SIM cards data might be required by some testing tools in communication tests.
+
+
+
+---+++++ Phone number (or MSISDN)
+
+Phone number (or MSISDN) is simply a phone number that SIM card assigns to a product inside the telecommunication networks. Phone number of a SIM card is specified in the "phone-number" fileld.
+
+Currently SIM card's phone number must be specified manually by a maintainer of the test farm right in the product's configuration file. 
+
+
+
+---+++++ PIN 1 and PIN 2 codes
+
+The 1st and the 2nd Personal Identification Numbers of a SIM card are specified in the "pin1" and "pin2" fields correspondingly.
+
+Currently SIM card's PIN 1 and PIN 2 codes must be specified manually by a maintainer of the test farm right in the product's configuration file. 
+
+
+
+---+++++ PUK 1 and PUK 2 codes
+
+The 1st and the 2nd PIN Unblocking Key codes are specified in the "puk1" and "puk2" fields correspondingly.
+
+Currently SIM card's PUK 1 and PUK 2 codes must be specified manually by a maintainer of the test farm right in the product's configuration file. 
+
+
+
+---+++++ Security code
+
+A security code assigned to the SIM card is specified in the "security-code" field.
+
+Currently SIM card's security code must be specified manually by a maintainer of the test farm right in the product's configuration file. 
+
+
+
+---+++++ IMSI
+
+International Mobile Subscription Identity number, which identificates this SIM card, is specified in the "imsi" field.
+
+Currently SIM card's IMSI number must be specified manually by a maintainer of the test farm right in the product's configuration file. 
+
+
+
+---+++++ Service dialling number
+
+Service dialling number associated with the SIM card is specified in the "service-dialling-number" field.
+
+Currently SIM card's service dialling number must be specified manually by a maintainer of the test farm right in the product's configuration file. 
+
+
+
+---+++++ Voice mailbox number
+
+Voice mailbox number associated with the SIM card is specified in the "voice-mailbox-number" field.
+
+Currently SIM card's voice mailbox number must be specified manually by a maintainer of the test farm right in the product's configuration file. 
+
+
+
+
+
+
+
+---+++ File
+
+Test executions always involve work with files. Depending on the nature of test, there could be less or more files involved into the testing process, but there always will be a need to transfer files from the SAIT plugin (CI 2.0 back-ends) to the selected test node and back. Test Automation Service handles operations on files through "file" descritpions - a minimal set of properties that describe files in sufficient manner.
+
+An example of detailed "file" description is presented on the following snapshot (please pay attention to comments):
+
+<blockquote>
+<verbatim>
+<file>
+    <!-- Name of the file together with its extension -->
+    <name>filename.ext</name>
+    <!-- Absolute or related path to the file, if any -->
+    <path>/path/to/file/</path>
+    <!-- Number of bytes in file or -1 if size is unknow -->
+    <size>123456</size>
+</file>
+</verbatim>
+</blockquote>
+
+File descriptions are used in messages which describe operations on files.
+
+
+
+---++++ Name of file
+
+Name of file should contain only the characters accepted by Linux and Windows file systems and the XML standard.
+
+
+
+---++++ Path to file
+
+Path to file should contain only the characters accepted by Linux and Windows file systems and the XML standard.
+
+
+
+---++++ Size of file
+
+Size of file is described in number of bytes (or octets in network terminology) that file actually contains. If size of file is unknown, then constant value -1 should be specified instead.
+
+
+
+
+
+
+
+---+++ Test Automation Service messages
+
+The Test Automation Service protocol is probably the most important and valuable part of the Test Automation Service internals. The main goal behind protocol was enabling easy integration and extension of any functionality related to test executions for the CI 2.0 back-ends and products handling in available testing farms.
+
+All messages in the protocol are represented in XML, as one of the most widely adopted way to describe data objects in network-based and distributed applications. Additionally, XML was choosen as a perfect glue for different technologies that could be used for implementing or replacing different components of the Test Automation Service in the future.
+
+The protocol itself is trying to be as minimalistic as possible. Instead of creating all sorts of messages for all activities and events taking place inside the Test Automation Service, all the messages were grouped into a few sets of "operations", performing on "tests", "products" or "files". This way we speak of "operations" on "tests", "products" or "files" within the context of Test Automation Service components.
+
+In addition to this, instead of inventing all sorts of envelopes for every type of messages, all messages are reusing just the same XML objects that were used for describing Test Automation Service concepts, i.e. "test", "product" and "file description". This way any changes in concept descriptions will be automatically reused inside the corresponding messages.
+
+For example, if we speak of some "operation" on a "test", then the corresponding message representing that operation should contain identification of operation to be performed on the test, and description of the "test" object itself. In the same way are composed operational messages for "products" and "files".
+
+That significantly decreases the number of messages required to design and implement protocol. Moreover, it makes additions of new operations fairly easy, since the only thing to be added is a new identification of operation on some data object, and the corresponding functionality to make actual use of the new operation type.
+
+
+
+---++++ Message
+
+Message object is a base of all XML messages exchanged by the Test Automation Service components and specifies the common structure that all other messages are following.
+
+An example of the message structure is presented on the following snapshot (please pay attention to comments):
+
+<blockquote>
+<verbatim>
+<!-- Example of a Message encoded in XML -->
+<!-- All messages are always started with the standard XML declaration and encoded in UTF-8 -->
+<?xml version="1.0" encoding="UTF-8"?>
+<message>
+    <type>Type of the message tells what kind of information this message should contain in envelope</type>
+    <!--
+        All messages always specify their sender and receiver
+        This helps with message forwarding and also lets to store messages as XML files or XML data records in the databases
+    -->
+    <sender>
+        <!-- Hostnames are preferred over IP addresses, since IP addresses may change over short periods of time, while hostnames usually don't -->
+        <hostname>sender.hostname.com</hostname>
+        <port>12345</port>
+    </sender>
+    <receiver>
+        <hostname>receiver.hostname.com</hostname>
+        <port>34567</port>
+    </receiver>
+    <envelope>
+        <!-- Contents of the envelope are fully depending on the type of message -->
+    </envelope>
+</message>
+<!-- Any binary data send with the XML message goes immediately at the next line after the message -->
+</verbatim>
+</blockquote>
+
+All messages send and received in the Test Automation Service components are always started with the standard XML declaration and encoded in UTF-8. Each message is always bounded by the "message" XML elements and contains a "type" of the message, then information about "sender" and "receiver", and "envelope" which holds actual contents of the message.
+
+Each message always specifies its sender and receiver. A sender and receiver of the message are defined by the computer hostnames where they are performing and corresponding port numbers. Although specifying sender's and receiver's information might be looking too excessive, it might become quite useful when messages are stored as XML files or XML database records for their later processing. Additionally, specifying the sender and receiver can make message forwarding much easier, since the actual sender and receiver of messages could be any other network-enabled components rather than specified ones.
+
+"Type" of the message defines contents and structure of "envelope" and so, should be always presented. In its turn the "envelope" keeps all the data that message is carrying, except for the binary data.
+
+In current version of the Test Automation Service protocol any binary data which is send with the message is actually followed the message object right on the next line after the final "</message>" XML element. This is done just within the W3C recommendation (http://www.w3.org/TR/xop10/), but in a more simpler manner. For example, there are no any MIME types, comments or technical details specified. There is just plain binary data in a byte-by-byte manner notifying the big-endian order for complex data objects. The big-endian byte order was selected as default for many networks and data exchanging technologies.
+
+
+
+---++++ Test operation messages
+
+All operations on test supported by the Test Automation Service are specified in the "test operation" messages. A format for such test operation messages is presented on the following snapshot (please pay attention to comments):
+
+<blockquote>
+<verbatim>
+<!-- Base format for describing operation on a test in the Test Automation Service -->
+<!-- All test operation messages are always encoded in the UTF-8 format -->
+<?xml version="1.0" encoding="UTF-8"?>
+<message>
+    <!-- Test operation messages always have type "test-operation" -->
+    <type>test-operation</type>
+    <sender>
+        <hostname>sender.hostname.com</hostname>
+        <port>12345</port>
+    </sender>
+    <receiver>
+        <hostname>receiver.hostname.com</hostname>
+        <port>23456</port>
+    </receiver>
+    <envelope>
+        <!-- Code of the operation a sender would like the receiver to perform on the specified test -->
+        <operation>start | stop | update | check</operation>
+        <test>
+            Description about related test...
+        </test>
+    </envelope>
+</message>
+</verbatim>
+</blockquote>
+
+Test operation message is always identificated by its type "test-operation". Test operation message requires that "operation" code is specified in the corresponding XML element inside the "envelope" of message.
+
+The following "operations" are supported on "tests": "start", "stop", "update" and "check".
+
+Since test operations are performed on tests, it is required to put a test description into the message's envelope as well. It is always recommended to put a detailed description of the test inside the envelope, but at least test id should be presented in the "test" object description to successfully identificate a test.
+
+
+
+---+++++ Start test operation
+
+All tests in the Test Automation Service are started from the "start" test operation messages. Such messages are of type "test-operation" and has operation id "start". Also they contain a detailed description of the test to be started, assuming that message sender is the issuer of test and message receiver is some instance of Test Automation Service.
+
+The detalization of a test description depends heavily on the nature of test, but at least a unique test id should be specified, together with the list of artifacts and the list of required products, if testing will involve any work on devices.
+
+For example:
+
+<blockquote>
+<verbatim>
+<?xml version="1.0" encoding="UTF-8"?>
+<message>
+    <type>test-operation</type>
+    <sender>
+        <hostname>test-issuer-1.nokia.com</hostname>
+        <port>12345</port>
+    </sender>
+    <receiver>
+        <hostname>test-automation-service-1.nokia.com</hostname>
+        <port>23456</port>
+    </receiver>
+    <envelope>
+        <operation>start</operation>
+        <test>
+            <id>some_test_for_rm_123</id>
+            <workspace-path>/test_build_machine_1/workspace/test_workspace_1</workspace-path>
+            <url>http://test_build_machine_1.domain.com/test_workspace_1/</url>
+            <target>flash</target>
+            <product-releasing-mode>automatic</product-releasing-mode>
+            <timeout>6360855</timeout>
+            <executor-application>ipy</executor-application>
+            <executor-script>execute.py</executor-script>
+            <artifacts>
+                <artifact>execute.py</artifact>
+                <artifact>data.zip</artifact>
+                <artifact>TestArtifact1.dll</artifact>
+                <artifact>TestArtifact2.dll</artifact>
+            </artifacts>
+            <results-filename>results.zip</results-filename>
+            <required-products>
+                <product>
+                    <rm-code>RM-123</rm-code>
+                    <role>main</role>
+                </product>
+            </required-products>
+        </test>
+    </envelope>
+</message>
+</verbatim>
+</blockquote>
+
+As you can see here, sender and receiver are assumed to be the issuer and the executor of test respectively. A list of all required artifacts is also presented, describing all the files involved into the test together with the "execute.py", or test workflow script to be executed on selected test node. Name of the test results archive - "results.zip" - is also specified. However, please note that Test Automation Service is not archiving any test results, but rather it is a job of the test workflow script, or "execute.py" in our case.
+
+The list of required products may contain as much product descriptions as the issuer of test will decide to put in, but here in this example we rather have only one device description, telling us about a single product with RM code "123" and in "main" role.
+
+This information should be enough to start a new test on the side of specified Test Automation Service. Whenever the test is successfully started, stopped or failed, the test issuer will get an "update" test operation message together with detailed information about the test.
+
+
+
+---+++++ Update test operation
+
+A test issuer is always notified by the Test Automation Service about all changes and updates in test workflow by the "update" test operation messages. All test "update" messages always contain detailed description of the related test. The receiver of a test "update" should investigate the contents of message and make a decision about current state of the test and its workflow from the message contents.
+
+Although such approach puts more demands on receiver's intelligency, it enables much more flexibility in describing all sorts of changes and events happened to the test during its lifetime. For example, it makes possible to describe changes in status of the test or in the list of reserved products in just the same message structure by using just the same XML objects.
+
+For example, a message about successfully started test could be looking like on the following snapshot:
+
+<blockquote>
+<verbatim>
+<?xml version="1.0" encoding="UTF-8"?>
+<message>
+    <type>test-operation</type>
+    <sender>
+        <hostname>test-automation-service-1.nokia.com</hostname>
+        <port>23456</port>
+    </sender>
+    <receiver>
+        <hostname>test-issuer-1.nokia.com</hostname>
+        <port>12345</port>
+    </receiver>
+    <envelope>
+        <operation>update</operation>
+        <test>
+            <id>some_test_for_rm_123</id>
+            <workspace-path>/test_build_machine_1/workspace/test_workspace_1</workspace-path>
+            <url>http://test_build_machine_1.domain.com/test_workspace_1/</url>
+            <target>flash</target>
+            <product-releasing-mode>automatic</product-releasing-mode>
+            <status>started</status>
+            <status-details></status-details>
+            <start-time>1351666792763</start-time>
+            <timeout>6360855</timeout>
+            <executor-application>ipy</executor-application>
+            <executor-script>execute.py</executor-script>
+            <artifacts>
+                <artifact>execute.py</artifact>
+                <artifact>data.zip</artifact>
+                <artifact>TestArtifact1.dll</artifact>
+                <artifact>TestArtifact2.dll</artifact>
+            </artifacts>
+            <results-filename>results.zip</results-filename>
+            <required-products>
+                <product>
+                    <rm-code>RM-123</rm-code>
+                    <role>main</role>
+                </product>
+            </required-products>
+            <reserved-products>
+                <product>
+                    <fuse-connection-name>NFPD TCP_FPS21XX</fuse-connection-name>
+                    <fuse-connection-id>GConnId_13339ab7fd8f4b5d</fuse-connection-id>
+                    <imei>004402470970868</imei>
+                    <rm-code>RM-123</rm-code>
+                    <role>main</role>
+                    <status>busy</status>
+                    <status-details>some_test_for_rm_123</status-details>
+                    <reservation-time>1351666792763</reservation-time>
+                    <reservation-timeout>6360855</reservation-timeout>
+                    <tas-hostname>test-automation-service-1.nokia.com</tas-hostname>
+                    <tas-port>23456</tas-port>
+                    <ip>172.23.123.255</ip>
+                    <port>15015</port>
+                </product>
+            </reserved-products>
+        </test>
+    </envelope>
+</message>
+</verbatim>
+</blockquote>
+
+From the example above we could see that test "some_test_for_rm_123" was changed on the sender's side (Test Automation Service "test-automation-service-1.nokia.com:23456"). More specifically, it has got status "started", the "start time" was updated to its real life value and the list of reserved products was populated with detailed information about devices actually reserved for the test from the available test farm.
+
+The receiver of such message ("test-issuer-1.nokia.com:12345") could decide that test "some_test_for_rm_123" was successfully started on device with IMEI "004402470970868" at some test node and became accessible over network through the TCP/IP connection "172.23.123.255:15015".
+
+All other test "update" messages will have just the same structure, except that the contents of XML objects will be different according to happened changes or events. For example, it a test gets failed, the "test" object in the "update" message will have "failed" status and the reason of test failure will be stored inside the "status-details" element. Otherwise, if test was successfully finished, the "update" message will contain a "test" object with status "finished".
+
+
+
+---+++++ Stop test operation
+
+All tests in the Test Automation Service could be stopped at any point through the issued "stop" test operation messages. In such messages the only required element of test description is the test id.
+
+For example:
+
+<blockquote>
+<verbatim>
+<?xml version="1.0" encoding="UTF-8"?>
+<message>
+    <type>test-operation</type>
+    <sender>
+        <hostname>test-issuer-1.nokia.com</hostname>
+        <port>12345</port>
+    </sender>
+    <receiver>
+        <hostname>test-automation-service-1.nokia.com</hostname>
+        <port>23456</port>
+    </receiver>
+    <envelope>
+        <operation>stop</operation>
+        <test>
+            <id>some_test_for_rm_123</id>
+        </test>
+    </envelope>
+</message>
+</verbatim>
+</blockquote>
+
+As you can see from the example above, the sender ("test-issuer-1.nokia.com:12345") is asking receiver ("test-automation-service-1.nokia.com:23456") to stop test "some_test_for_rm_123". If receiving Test Automation Service is indeed running such test, the test will be stopped and mentioned test issuer will receive test "update" operation message with detailed description of the stopped test. Otherwise the receiving Test Automation Service will send a "stop" test operation message with the same test description but in the "failed" status back to the test issuer.
+
+
+
+---+++++ Check test operation
+
+In order to prevent any "dead" or "jammed" tests, any remote clients of the Test Automation Service have abilities to check test's current status through the "check" test operation messages. In such messages the only required element of test description is the test id.
+
+For example:
+
+<blockquote>
+<verbatim>
+<?xml version="1.0" encoding="UTF-8"?>
+<message>
+    <type>test-operation</type>
+    <sender>
+        <hostname>test-issuer-1.nokia.com</hostname>
+        <port>12345</port>
+    </sender>
+    <receiver>
+        <hostname>test-automation-service-1.nokia.com</hostname>
+        <port>23456</port>
+    </receiver>
+    <envelope>
+        <operation>check</operation>
+        <test>
+            <id>some_test_for_rm_123</id>
+        </test>
+    </envelope>
+</message>
+</verbatim>
+</blockquote>
+
+As you can see from the example above, the sender ("test-issuer-1.nokia.com:12345") is asking receiver ("test-automation-service-1.nokia.com:23456") to check test "some_test_for_rm_123". If receiving Test Automation Service is indeed running such test, the latests test descriptions will be extracted and send back to the test issuer in "update" test operation message. Otherwise the receiving Test Automation Service will send a "stop" test operation message with the same test description but in the "failed" status back to the test issuer.
+
+
+
+
+
+
+
+---++++ Product operation messages
+
+All operations on products supported by the Test Automation Service are specified in the "product operation" messages. All product operation messages are typically exchanged between the Test Automation Service and its test farm, handled by the Test Automation Communicators. However, any issuer of the test may release all successfully reserved products at any time by issuing special product operation messages.
+
+A format for such product operation messages is presented on the following snapshot (please pay attention to comments):
+
+<blockquote>
+<verbatim>
+<!-- Base format for describing operation on a product in the Test Automation Service -->
+<!-- All product operation messages are always encoded in the UTF-8 format -->
+<?xml version="1.0" encoding="UTF-8"?>
+<message>
+    <!-- Product operation messages always have type "product-operation" -->
+    <type>product-operation</type>
+    <sender>
+        <hostname>sender.hostname.com</hostname>
+        <port>12345</port>
+    </sender>
+    <receiver>
+        <hostname>receiver.hostname.com</hostname>
+        <port>23456</port>
+    </receiver>
+    <envelope>
+        <!-- Code of the operation a sender would like the receiver to perform on the specified product -->
+        <operation>add | remove | update</operation>
+        <!-- Product operation messages must contain description of related product and possibly related test -->
+        <test>
+            <!-- At least test id should be presented to describe the possibly related test -->
+            <id>Test id</id>
+        </test>
+        <product>
+            Description or related product...
+        </product>
+    </envelope>
+</message>
+</verbatim>
+</blockquote>
+
+Product operation message is always identificated by its type "product-operation". Product operation message requires that "operation" code is specified in the corresponding XML element inside the "envelope" of message.
+
+The following "operations" are supported on "products": "add", "remove" and "update".
+
+Since product operations are performed on products, it is required to put a product description into the message's envelope as well. It is always recommended to put a detailed description of the product inside the envelope, and at least id of the possibly related tes.
+
+
+
+---+++++ Add product operation
+
+Add product operation is identificated by id "add" and issued when Test Automation Communicator has recognized a new product attached to the test node.
+
+
+
+---+++++ Remove product operation
+
+Remove product operation is identificated by id "remove" and issued when Test Automation Communicator has recognized a product disconnected from the test node. If product was previously reserved by some test and has been in "busy" status, then at least 5 minutes will be waited before Test Automation Service will get notification about disconnected devices. This is done because tests may flash or update software on products and 5 minutes delay will be enough to recognize a "dead" product.
+
+
+
+---+++++ Update product operation
+
+Update product operation is identificated by id "update" and issued when Test Automation Communicator has recognized some changes in a product data attached to the test node. In its turn, Test Automation Service will notify Test Automation Communicator about current product changes through the same type of messages.
+
+
+
+
+
+
+
+---++++ File operation messages
+
+File operation messages are used for issuing file request and response operations between Test Nodes and SAIT plugin. A format for file operation messages is presented on the following snapshot (please pay attention to comments):
+
+<blockquote>
+<verbatim>
+<!-- Base format for describing operation on a file in the Test Automation Service -->
+<!-- All file operation messages are always encoded in the UTF-8 format -->
+<?xml version="1.0" encoding="UTF-8"?>
+<message>
+    <!-- File operation messages always have type "file-operation" -->
+    <type>file-operation</type>
+    <sender>
+        <hostname>sender.hostname.com</hostname>
+        <port>12345</port>
+    </sender>
+    <receiver>
+        <hostname>receiver.hostname.com</hostname>
+        <port>23456</port>
+    </receiver>
+    <envelope>
+        <!-- Code of the operation a sender would like the receiver to perform on the specified file -->
+        <operation>get | put | abort</operation>
+        <!-- File operation messages must contain description of related file and possibly related test -->
+        <test>
+            <!-- At least test id should be presented to describe the possibly related test -->
+            <id>Id of the test related to the operation on a file</id>
+        </test>
+        <file>
+            <!-- File description should always contain the file name -->
+            <name>filename.ext</name>
+            <!-- Paths to file are optional and could be useful when file transfer will be handled by some other techniques -->
+            <path>/optional/path/to/file/directory/</path>
+            <!-- Size of the file is always measured in bytes, and -1 is used if file size is unknown -->
+            <size>80384</size>
+        </file>
+    </envelope>
+</message>
+<!-- If file operation was "put", then file's binary data goes here immediately at the next line after the message -->
+</verbatim>
+</blockquote>
+
+File operation message is always identificated by its type "file-operation". File operation message requires that "operation" code is specified in the corresponding XML element inside the "envelope" of message.
+
+The following "operations" are supported on "files": "get", "put" and "abort".
+
+Since file operations are performed for some tests, it is required to put a test description into the message's envelope as well. At least test id must be specified in order to describe the test.
+
+
+
+---+++++ Get file operation
+
+Get file operation is identificated by id "get" and issued when sender wants the receiver to send back a copy of specified file.
+
+Typically "get" file operations are send from Test Node to SAIT plugin in order to deliver required test artifacts.
+
+
+
+---+++++ Put file operation
+
+Put file operation is identificated by id "put" and issued when sender wants the receiver to receive a copy of specified file. In such case file operation message must contain a detailed description of the file and its binary data, immediatelly following the message XML object on the next line. The default encoding for binary data is "big-endian" and the number of bytes delivered after the message XML object must be exactly the same as specified in the file description's "size" field. No wraps of paddings should be used for file's binary data.
+
+Typically "put" file operations are send from SAIT plugin to Test Nodes in order to deliver requested test artifacts.
+
+
+
+---+++++ Abort file operation
+
+Abort file operation is identificated by id "abort" and may be issued when sender wants the receiver to stop any file operations issued previously for the same file.
+
+
+
+
+
+
+
+---++ Test Execution
+
+---+++ Test execution flow
+
+Test descriptions are issued by the SAIT plugin through a Test Automation Client working on the side of Jenkins CI server. In addition to the test description, SAIT also generates test artifacts and composes test execution script which will do final testing work on a test node. The workflow of a normal test execution looks like the following:
+
+<verbatim>
+1. SAIT plugin sends a test description to selected Test Automation Service
+
+    1.1 Test description must be inside the Test Operation message's envelope
+    1.2 Test operation id must be "start"
+
+2. Test Automation Service starts handling received test description
+
+    2.1 Test Automation Service checks test description for inconsistency: invalid test id, missing list of required products, etc.
+        If test description is inconsistent, Test Automation Service will send a Test Operation message with id "stop" and test in status "failed" back to the SAIT plugin
+        In such case test's status details will contain the reason why test has failed and why it was stopped
+    
+    2.2 Test Automation Service starts reserving all required resources for a valid test
+        Test resources (products and test nodes) are reserved as soon as they become available
+        Test resources allocation is performed for as long as test's timeout is not expired
+        If test hasn't specified any timeouts, the default timeout specified through the "test-default-timeout" parameter will be used
+        Test Automation Service will send a Test Operation message with id "stop" and test in status "failed" back to the SAIT plugin if required resources
+            were not allocated during test's timeout, or during so-called the "test resource expectation timeout",
+            specified through the "test-resources-expectation-timeout" parameter
+        In case of a failure test's status details parameter will contain the reason why test has failed and why it was stopped
+
+    2.3 Test Automation Service reserves all required test resources for the test
+        All successfully reserved test resources (products) are marked as "busy"
+        Test Automation Service sends a Test Operation message with id "start" and updated test descriptions, containing a list of successfully reserved products
+            to all selected and reserved Test Nodes
+
+3. Test Node starts executing received test descriptions
+
+    3.1 Test Node creates a directory for the test inside its "workspace" directory and launches test executor process
+        Test's directory will have the same name as test's runtime id (a combination of its original "id" and possible sub-test's "sub-id")
+        Test's directory will be ensured to be empty up on its creation
+        Test Node will send a Test Operation message with id "stop" and test in status "failed" back to the Test Automation Service if test directory wasn't created for some reason
+        In such case test's status details will contain the reason why test has failed and why it was stopped
+
+    3.2 Test Node starts requesting and receiving all specified test artifacts
+        Test artifacts are requested from the SAIT plugin one after another through the File Operation messages with id "get"
+        SAIT plugin replies with File Operation messages with id "put" and binary data send with these messages
+        Test Node stores received files in test's directory
+        Test Node will send a Test Operation message with id "stop" and test in status "failed" back to the Test Automation Service if test artifact's receiving has failed for some reason
+        In such case test's status details will contain the reason why test has failed and why it was stopped
+
+    3.3 Test Node starts a separated process for the test execution script mentioned in test descriptions
+        Test Node sends a Test Operation message with id "update" and test in status "started" back to the Test Automation Service if start was successful
+        Test Automation Service forwards a Test Operation message with id "update" and test in status "started" to the SAIT plugin
+        Test executor application and specified test executor script starts running and executing automated tests
+        Test Node will send a Test Operation message with id "stop" and test in status "failed" back to the Test Automation Service if test execution has failed for some reason
+        In such case test's status details will contain the reason why test has failed and why it was stopped
+
+    3.4 Test Node waits until launched test executor application and test executor script will finish their work
+        Any outputs from the test executor application and test executor script will be sent to SAIT plugin inside the Text Messages
+
+    3.5 Test Node sends test results file back to the SAIT plugin
+        Test results are send through the File Operation message with id "put"
+        Test Node will send a Test Operation message with id "stop" and test in status "failed" back to the Test Automation Service if test results file wasn't existing
+            or if its sending has failed
+        In such case test's status details will contain the reason why test has failed and why it was stopped
+
+    3.6 Test Node finalizes test execution
+        Test Node will send a Test Operation message with id "update" and test in status "finished" back to the Test Automation Service if test results file was successfully send to SAIT plugin
+        Test Node deletes test's directory
+
+4. Test Automation Service performs all required cleanups after test execution.
+
+    4.1 Test Automation Service marks all reserved products as "free", if test's product releasing mode was "automatic"
+        If product releasing mode was "manual" and test was successfull, Test Automation Service notifies SAIT plugin about the products to be released manually at the end
+        If product releasing mode was "manual" and test was not successfull, Test Automation Service marks all reserved products as "free"
+
+    4.2 It test execution was not successfull, Test Automation Service tries to re-start failed test
+        Test (or sub-test) can be restarted if the total number of failures occured during the whole test execution is no greater than a number
+            specified in the "maximal-number-of-retries-for-failed-test" parameter
+        Test (or sub-test) can be restarted if the updated remaining timeout is no less than a timeout specified in the "test-minimal-execution-time" parameter
+        A test (or sub-test) that can be restarted, is again added to the list of tests requiring test resources and workflow jumps to the point 2.2
+        If test (or sub-test) cannot be restarted, the whole test is failed and test's status details will contain the reason why test has failed and why it was stopped
+</verbatim>
+
+At any point Test Automation Service, Test Node or SAIT plugin may stop test execution by issuing a Test Operation message with id "update" and a test specified as having status "stopped". Any receiver of such message should automatically stop any components handling the corresponding test and release all reserved test resources.
+
+
+
+
+
+
+
+---++ Issuing tests for the Test Automation Service by using the Test Automation Client API
+
+Use of the SAIT plugin is strongly encouraged, since it automates all aspectes of test preparations, including generation of a test execution scripts and configuration of all supported testing tools. However, if you really hasn't any possibilities to use SAIT plugin, you still can issue tests for the Test Automation Service either from XML messaging or through a Test Automation Client library implemented in Java. The latests version of Test Automation Client library, called =TestAutomationClient.jar=, can be always obtained from the official build server: [[http://oucis004.europe.nokia.com:8080/job/Gerrit---S40%20TAS/]]
+
+This library contains a communication module called Test Automation Client which can talk to specified Test Automation Service and launch tests over it. In fact, the SAIT plugin is using just the same Test Automation Client to communicate with Test Automation Services.
+
+Please download the library and add it as a 3rd party library into your Java project. The next step will be implementing the =TestAutomationServiceListener= interface. The =TestAutomationServiceListener= interface is used by the Test Automation Client to notificate your application about test's progress or any failures occured during the test execution. Additionally =TestAutomationServiceListener= interface defines two methods for handling retrieving and storing of all files invoked in test preparation, execution and delivery of the final test results file.
+
+In short, you application starts a Test Automation Client, 
+
+Here is the full snapshot of this interface. Please pay attention to the comments:
+
+<blockquote>
+<verbatim>
+package com.nokia.ci.tas.commons;
+
+import java.io.InputStream;
+import java.io.OutputStream;
+
+/**
+ * This interface must be implemented by users of the Test Automation Client.
+ */
+public interface TestAutomationServiceListener {
+
+    /**
+     * Called when test is started.
+     *
+     * @param test Started test
+     */
+    public void testStarted(Test test);
+
+    /**
+     * Called when specified test has finished.
+     * Please note, a "finished" test doesn't mean "successful" test results.
+     * It just means that Test Automation Service has executed specified test
+     * and test results are stored in the test issuer's workspace.
+     *
+     * @param test Finished test
+     */
+    public void testFinished(Test test);
+
+    /**
+     * Called when specified test has failed.
+     *
+     * @param test Failed test
+     * @param reason Reason of test failure
+     */
+    public void testFailed(Test test, String reason);
+
+    /**
+     * Called when Test Automation Service has a message to the listener regarding specified test.
+     *
+     * @param test Test under execution
+     * @param message A message from Test Automation Service regarding specified test
+     */
+    public void messageFromTestAutomationService(Test test, String message);
+
+    /**
+     * Resolves a file reading request from the Test Automation Client.
+     * This method should simply open and return input stream to specified file
+     * or return null if such file is not existing or not accessible by listener.
+     *
+     * @param directoryPath Path to a directory where file should be located
+     * @param fileName Name of the file to be read
+     * @return Input stream to specified file or null if file is not existing or cannot be accessed
+     */
+    public InputStream readFile(String directoryPath, String fileName);
+
+    /**
+     * Resolves a file creation request from the Test Automation Client.
+     * This method should simply create specified file in the specified directory
+     * and open output stream to that file.
+     * If file cannot be created (or overwritten for some reasons),
+     * this method should return null.
+     *
+     * @param directoryPath Path to a directory where file should be created
+     * @param fileName Name of the file to be created
+     * @return Output stream to created file or null if file cannot be created or overwritten for some reasons
+     */
+    public OutputStream createFile(String directoryPath, String fileName);
+}
+</verbatim>
+</blockquote>
+
+Basically you should implement this interface in a component which will want to receive notifications from the Test Automation Client. Here is a very basic example of how this interface could be used together with the Test Automation Client. Please pay attention to the comments:
+
+<blockquote>
+<verbatim>
+import java.util.HashMap;
+
+import com.nokia.ci.tas.client.TestAutomationClient;
+
+import com.nokia.ci.tas.commons.Constant;
+import com.nokia.ci.tas.commons.Test;
+
+// A simple example of how TestAutomationServiceListener could be used
+public class TASListenerExampleImplementation extends Thread implements TestAutomationServiceListener {
+
+    // Here is the instance of Test Automation Client which will take care about all communications and notifications
+    private TestAutomationClient client;
+
+    // A hash map just to store and remember all tests issued from this application
+    // This is not mandatory, this is just a handy way to remember mutiple tests launched from your application
+    private HashMap<String, Test> executingTests;
+
+    // Just to keep things running
+    private boolean isRunning = false;
+
+    // Some constructor
+    public TASListenerExampleImplementation() {
+        isRunning = true;
+        executingTests = new HashMap<String, Test>(0);
+    }
+
+    // Applications's main routine
+    @Override
+    public void run() {
+        try {
+            // Launch a client and redirect its outputs to the standard console
+            // Note, a client will automatically launch itself, so there is no any calls to the start() method
+            client = new TestAutomationClient(System.out);
+
+            // Tell where we are running
+            p("New client created on " + client.getHostname() + ":" + client.getPort());
+
+            // Tell how you're going to release reserved products after the test execution (automatic releasing is default)
+            Test.ProductReleasingMode productReleasingMode = Test.ProductReleasingMode.AUTOMATICALLY_RELEASE_RESERVED_PRODUCTS;
+            
+            // In cases when reserved products will be released manually, use the following mode:
+            // Test.ProductReleasingMode productReleasingMode = Test.ProductReleasingMode.MANUALLY_RELEASE_RESERVED_PRODUCTS;
+
+            // Launch 10 tests from this application
+            for (int i = 0; i < 10; i++) {
+
+                // Generate a test with some unique id, like here "Test_<timestamp>_<index>"
+                // Plase note that target will be Test.Target.FLASH, or products will be flashed
+                
+                Test test = new Test("Test_" + System.currentTimeMillis() + "_" + i, productReleasingMode, Test.Target.FLASH);
+                
+                // Tell where exactly in which directory your test artifacts are located
+                // This could be either a Windows or Linux directory
+                
+                test.setWorkspacePath("C:\\TASDemo"); // If you run you test from Windows
+                // Or
+                //test.setWorkspacePath("/home/your_username/tasdemo"); // If you run your test from Linux
+
+                // Specify a reasonable timeout in milliseconds, otherwise the default timeout will be used (which is 6 hours)
+                test.setTimeout(24 * Constant.ONE_HOUR);
+
+                // Tell what is your expectation for any reserved products disconnections, for example during the flashing or reseting
+                test.setProductDisconnectionTimeout(Constant.THIRTY_SECONDS);
+
+                // Tell what products you need
+                Product product = new Product();
+                
+                // Specify RM code of the product you expect to reserve from the test farm
+                product.setRMCode("RM-763");
+                
+                // Or specify the IMEI number you need
+                //product.setIMEI("010203040506070809");
+                
+                // Tell what role you assign to this product
+                product.setRole(Product.Role.MAIN);
+                
+                // Add this product to the list of required products
+                // If your test requires more than one product, simply repeat this operation with another product object
+                test.addRequiredProduct(product);
+                
+                // Finally, tell what artifacts (or files) will be involved in your test
+                // Please note, that these artifacts should be already available from your test's workspace directory,
+                // for example from the "C:\TASDemo" or "/home/your_username/tasdemo" directories
+                
+                // Here we go:
+                
+                // First, specify a test execution application
+                // By default it is set to "ipy" or Iron Python as the Granite tool is requiring it
+                // Otherwise you can change it to "python.exe", "perl.exe", "cmd.exe" or any other application
+                // which is installed on your test nodes which will know how to use your test executor script (specified at the next step)
+                test.setExecutorApplication("ipy");
+
+                // Here you must specify a test executor script
+                // This script will do the actual testing:
+                // parse reserved product's connection parameters (automatically provided by the Test Automation Communicator though command line);
+                // flash the product (if required);
+                // unpack, configure and launch test tools (delivered as test artifacts);
+                // check if test results were generated and pack them into a final results file (specified at the next step)
+                // In this particular case we have here an Iron Python script called "execute.py"
+                // If you are using Perl scripts, for example,
+                // then your executor application should be "perl.exe" while your test executor script should be something like "do_amazing_thing.pl"
+                test.setExecutorScript("execute.py");
+                
+                // You can also skip specifying the executor script, and define only executor application
+                // This can be useful when you has some executable program which does your testing
+                // Like, for example, here:
+                //test.setExecutorApplication("special_test_application.exe"); test.setExecutorScript("");
+                // or even
+                //test.setExecutorApplication("special_test_application.exe + some start parameters"); test.setExecutorScript("");
+                // In this case Test Automation Communicator will simply launch
+                // your "special_test_application.exe", assuming that it is already installed on your test nodes
+
+                // Specify the name of test results file that your test executor script is generating
+                // This could be a .zip file, or .log file, or anything you can get and generate with your test executor script
+                test.setResultsFilename("results.zip");
+
+                // Finally, tell what test artifcats (or files) you should deliver to the test node in order to start testing
+                test.addArtifact("some_flashable_image.img");
+                test.addArtifact("some_additional_flashable_content.img");
+                test.addArtifact("some_sub_application_invoked_by_your_test_script.exe");
+                test.addArtifact("like_for_example_flasher.exe");
+
+                // Add the test instance into the hash map, just to remember what tests we've tried to launch
+                executingTests.put(test.getId(), test);
+
+                // Here is the magic: start test on specified Test Automation Service
+                // Since each Test Automation Service is identified by its hostname and port number, simply specify them here
+                // Please note, that we are specifying this application as a listener of all events related to test execution
+                client.startTest(test, "jamesbond007.noe.nokia.com", 33333, this);
+            }
+
+            // Just wait for some updates
+            while (isRunning) {
+                sleep(Constant.DECISECOND);
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    // This method is called by Test Automation Client when a test was successfully started on a test node
+    // Please note that specified test instance (startedTest) will contain a list of successfully reserved products
+    // If you are releasing them manually, you should remember these products otherwise nobody will release them until a timeout expiration
+    @Override
+    public void testStarted(Test startedTest) {
+        p("Got a started test: " + startedTest);
+
+        // Just remember what has started
+        if (executingTests.containsKey(startedTest.getId())) {
+            executingTests.put(startedTest.getId(), startedTest);
+        }
+    }
+
+    // This method is called by Test Automation Client when a test was finished on a test node
+    // If you has specified a manual release of products reserved for this test, then you should release them here
+    @Override
+    public void testFinished(Test finishedTest) {
+        p("Got a finished test: " + finishedTest);
+
+        // Try to release all the products reserved for this test
+        if (executingTests.containsKey(finishedTest.getId())) {
+            Test test = executingTests.get(finishedTest.getId());
+
+            if (test.getProductReleasingMode() == Test.ProductReleasingMode.MANUALLY_RELEASE_RESERVED_PRODUCTS) {
+                p("Releasing all reserved products for the test " + test);
+                
+                // Simply tell Test Automation Client that you want to release products
+                client.freeProducts(test.getReservedProducts());
+            } else {
+                // Otherwise there is nothing to worry about, since all reserved products will be released automatically
+            }
+
+            // Remove this test from the list of executing tests
+            executingTests.remove(finishedTest.getId());
+        }
+
+        // Just stop if we've executed all issued tests
+        if (executingTests.isEmpty()) {
+            isRunning = false;
+        }
+    }
+
+    // This method is called by Test Automation Client when a test has failed for some reason
+    // If you has specified a manual release of products reserved for this test, then you should release them here
+    @Override
+    public void testFailed(Test failedTest, String reason) {
+        p("Got a failed test: " + failedTest);
+        p("The reason of failure was: " + reason);
+
+        // Try to release all the products reserved for this test
+        if (executingTests.containsKey(failedTest.getId())) {
+            Test test = executingTests.get(failedTest.getId());
+
+            if (test.getProductReleasingMode() == Test.ProductReleasingMode.MANUALLY_RELEASE_RESERVED_PRODUCTS) {
+                p("Releasing all reserved products for the test " + test);
+                
+                // Simply tell Test Automation Client that you want to release products
+                client.freeProducts(test.getReservedProducts());
+            } else {
+                // Otherwise there is nothing to worry about, since all reserved products will be released automatically
+            }
+
+            // Remove this test from the list of executing tests
+            executingTests.remove(failedTest.getId());
+        }
+
+        // Just stop if we've executed all issued tests
+        if (executingTests.isEmpty()) {
+            isRunning = false;
+        }
+    }
+
+    // This method is called by Test Automation Client when a Test Automation Service is sending you a text message about your test execution
+    // Usually this message represents outputs from your test executor application and script
+    @Override
+    public void messageFromTestAutomationService(Test test, String message) {
+        p("Message from Test Automation Service about test " + test.getId() + ": " + message);
+    }
+
+    // This method is called by Test Automation Client when it cannot get reading access to specified file (like some mentioned test artifact)
+    // For example, when you operating system allows only your application instance to get reading access to mentioned file
+    @Override
+    public InputStream readFile(String directoryPath, String fileName) {
+        p("readFile(" + directoryPath + ", " + fileName + ") is called");
+        
+        // Here you should simply get access to specified file and open and return InputStream to this file
+        
+        return null;
+    }
+
+    // This method is called by Test Automation Client when it cannot get writing access to specified file (like some mentioned test results file)
+    // For example, when you operating system allows only your application instance to get writing access to mentioned file
+    @Override
+    public OutputStream createFile(String directoryPath, String fileName) {
+        p("createFile(" + directoryPath + ", " + fileName + ") is called");
+        
+        // Here you should simply create mentioned file if it is not yet existing
+        // And open and return OutputStream to this file
+        
+        return null;
+    }
+
+    // Just prints some message to the console
+    public void p(String message) {
+        System.out.println("TASListenerExampleImplementation: " + message);
+    }
+}
+</verbatim>
+</blockquote>
+
+This is fairly simple Java application which utilizes Test Automation Client through a library. You can achieve just the same functinality through sending and receiving XML messages explained above, but in this case you will need to parse and handle them by yourself.
+
+The contents of your =execute.py= script might be something like this:
+
+<blockquote>
+<verbatim>
+import os, zipfile, subprocess, shutil, sys, fnmatch, fileinput, re, time 
+
+def main(): 
+    print "Starting demo test..."
+    
+    # Here you should print current path and all input arguments just to get the clue where and how your script is invoked
+    
+    # Here you should unpack and prepare everything for flashing reserved products
+    
+    # Here you should configure your test tools and launch the test
+
+    # Here is our "test"
+    for n in range(0, 100):
+        print 'Demo output line ', n, ' 1. Flash the phone. 2. Run test tool. 3. Pack test results into results.zip'
+
+    print 'Demo test is over'
+    
+    # Here you should check test results and pack them into test results file, mentioned in your test description
+    print 'Compressing test results to results.zip'
+    zf = zipfile.ZipFile('results.zip', 'a')
+    try:
+        print 'Adding the script itself into test results file...'
+        zf.write('execute.py')
+    finally:
+        zf.close()
+
+    # That's all, after this script execution Test Automation Communicator will send test results file back to your Test Automation Client
+
+if __name__ == '__main__': main() 
+
+</verbatim>
+</blockquote>
+
+Please note, that this script is generating the =results.zip= archive, mentioned in the Java code as =test.setResultsFilename("results.zip")= This is very important to understand since Test Automation Communicator doesn't know what your test script will be doing, but it will know how the test results file should be named at the end of your test execution. It's just up to your test script's functionality how and what you are going to test. The Test Automation Service simply will ensure that your test will be executed on the most suitable node and devices, and will take care about all artifacts copying issues from your Test Automation Client to the selected Test Automation Communicator.
+
+
+
+---++ How to get more information about Test Automation Service
+
+For more detailed information about TAS internals, please visit the [[http://wikis.in.nokia.com/CI20Development/TASInternals][TAS Internals]] page. In any problematic cases, please don't hesitate to contact Alexander Smirnov (ext-alexander.3.smirnov@nokia.com) for a short consultancy on your test farm's technical problems.

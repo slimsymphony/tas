@@ -1,0 +1,413 @@
+﻿*Test Automation Service Internals*
+
+%TOC%
+
+---++ Internals of the Test Automation Service
+
+The whole Test Automation Service is splitted across three major components: Test Automation Service (also know as test farm's superviser or "Load Balancer"); Test Automation Communicator (also known as "Test Node" or "test job executor"); and Test Automation Client (also known as "Client" or "test job issuer"). Each of these components has clearly distinguished tasks and purposes for helping test farms be more productive and flexible. But despites conceptual simplicity, some aspects of the Test Automation Service developments probably need to be explained in more detailed way to make current design and implementation more understandable for developers and test farm users.
+
+
+---+++ Initial goals
+
+The original idea behind test farms utilization in the CI system was to offer Nokia developers a possibility to test and verify each of their code commits on real hardware devices and prototypes, so possibly eliminating bugs, preventing integrity breakups and spotting critical issues in software, hardware and mobile networks developments on their very earlier stages.
+
+With such approach the test farm concept was figured out as a dynamic cluster of Nokia products and prototypes made somehow accessible remotely over networks for automated in-device testing and verifications.
+
+Since this possibility was planned to be offered to any software development project at Nokia, the number of test jobs per day or even hour was more or less unpredictable and could possibly vary even on minute basis. For addressing this issue the test farm's software and hardware components had to be not just stable and robust, but also flexible and reconfigurable "on the fly". All this in need to execute and supervise more simultaneous test jobs at any given time and under any occured circumstances. And since the nature of automated in-device testing by itself is quite unpredictable, so the test farm components had to be very adaptable and scalable, so enabling fast and cost effective utilization of test farm's resources.
+
+
+
+---+++ Test farm concepts
+
+At the initial stages of the project a single test farm was considered to be a dynamic set of Nokia products or prototypes made somehow accessible from the network for automated in-device testing and verifications. Such a simple concept, however, hasn't considered many of the issues that are usually involved with the real-life automated in-device testing.
+
+First of all, the in-device testing requires frequent updates of product's software, sometimes for each of the executed test suites. These software updates are usually requiring a lot of attention since an improper firmware written to the hardware could totally destroy a product or prototype. So, somehow test farm needed to be aware about all important technical parameters regarding each of available products. Some of these parameters are represented by product's RM code, IMEI numbers and hardware type.
+
+Additionally the automated in-device testing is requiring more than just a proper firmware and the product. Automated testing is also requiring an advanced testing tool which must be somehow pre-configured and tuned to work with the selected device. So, a test farm must also be able to tell automated testing tools what products were selected for this particular test job.
+
+And as everything is changing around from time to time, so the test farm should be able to adapt new products and testing tools without too much effort from the developers, testers or test farm's maintainers.
+
+All that should somehow work perfectly within the Nokia's infrastructures where historically most of the in-device testing tools and supportive utilities were designed and developed for the Windows-based platforms and where most of the back-end systems were designed and developed on top of the UNIX- and Linux-based environments.
+
+With all such considerations it was figured out that the whole test farm should implement a layered architecture where each layer would be responsible for its particular set of functionality and problems solving, while being safely separated from the other layers and CI system at the same time.
+
+With all possible issues taken at a time, it was decided to split the whole test farm into three layers: the "test nodes"; the "Test Automation Service"; and the "Test Automation Clients".
+
+The layer represening test nodes had to cover all aspects of installing, running and maintaning Windows-based PCs where most of automated in-device testing was performing so far. The "test nodes" layer had also cover all aspects of handling and utilization of Nokia products or prototypes physically or virtually attached to these PCs. So, both the PC, a set of Nokia products attached to it and a set of special pre-installed sofware would turn that PC into a single "test node", capable of providing test jobs with an execution environment and a link to the CI system.
+
+A number of such test nodes would form a single test farm, represented and utilized as a whole by a so called "Test Automation Service" - a special software application what whould supervise test nodes and make their Nokia products and execution environments available for any external test job. This level of functionality could be simply described as a "Test Automation Service", since it turns a test farm into a set physical and virtual resources made available over the network. And since multiple test jobs could request similar execution environments from the same test farm at just the same time, the "Test Automation Service" should somehow be able to share and prioritize test farm's resources among all issued jobs, trying to execute them as soon and as safely as possible.
+
+While "test nodes" and "Test Automation Service" are turning the whole test farm into a dynamic set of physical and virtual resources, there is a need to make these resources available to their external users through some common and universal interface. This task is solved at the third layer represented by the "Test Automation Clients". Test automation client, or "client" for short, is a special networked application that can help external users to issue test jobs on specified test farms. Additionally Test Automation Clients are helping external users to trace executions of successfully started tests and to get test results back when they will be ready.
+
+All the mentioned layers and components of the Test Automation Service could be presented as on the following figure:
+
+<img alt="Test Automation Service overal architecture" src="%ATTACHURLPATH%/TestAutomationServiceOveralArchitecture.png" />
+
+Such architecture helps with solving a number of problems involved with creation and using test farms inside Nokia's infrastructures.
+
+
+
+---++++ Test nodes
+
+Historically most of Nokia's in-house product developments and testing tools were designed and developed for the Windows platforms. In reality it means that most of Nokia's products connectivity, management, flashing and in-device testing tools can be used only from the Windows PCs. At the same time the available set of such tools forms quite an impressive portfolio that any developer or tester could always benefit from. The Test Automation Service wasn't an exception from this rule.
+
+A commodity PC with pre-installed and pre-configured Nokia tools is able to manage a few connected products and prototypes, usually up to a dozen. Such connected products could be flashed and updated dynamically with help from the flashing tool and Nokia's frameworks (like Product API and TSS Communication API), while their availability and state could be at the same time supervised by Nokia's FUSE application.
+
+All this has significantly simplified creation of test nodes – standalone PCs that are providing environments for automated in-device test executions. Based on this, the Test Automation Service had simply to create a supervising agent application for each of such test nodes, while all the necessary test artifacts could be delivered from CI back-ends over a network connection.
+
+Since automatic in-device testing tools like Granite and TDK may quite easily interact with Nokia products through ISI messaging and over TCP/IP connections, all what had to be done was just a safe separation of test execution processes from each other and ensuring correct parameters supplied to the flashing utilities and test automation tools.
+
+In respect to this, a supervising agent application was created for keeping eye on what products were available on each of the test nodes, launching test execution processes on selected and reserved products and notifying Test Automation Service (also known as test farm's superviser or "Load Balancer") about all issues or failures occurred during test executions. Just as additional task, that agent application was responsible for handling file copying from and to CI back-ends where Test Automation Clients were working and issuing the tests.
+
+Such agent was implemented as the Test Automation Communicator application. The name "Communicator" was selected in respect to the nature of application's functionality which mostly was communicating with the test farm's superviser and Test Automation Clients, notifying them about what was happening on a test node during test job executions.
+
+Since a single test node is representing quite a powerful execution environment for various in-device tests, one of the most important tasks of Test Automation Communicator was to provide testers and testing tool developers with a very flexible environment for their needs. Namely, to provide each automated test with its own execution environments, safely separated from the other parallel automated tests running on the same test node, and to automate test artifacts handling and test results deliveries back to the CI system.
+
+
+
+---++++ Test automation clients
+
+The CI system is integrating many of the testing tools and technologies. Initially the automated in-device testing was aimed to be provided through the CI system as an additional testing technology or tool rather than as one of its many building blocks. With such approach the CI system needed only a common interface into the testing farms. Since the CI system itself is heterogeneous and distributed, so a provider of such common interface should be able to work inside the same environments. In other words, such provider should be able to utilize both the network and local data storages provided by the CI system in order to issue test jobs on selected test farms and be relatively easy integrated into the components or applications of the CI system itself.
+
+Another issue to be solved with the layered approach was separation of highly dynamical test farms from the CI system. Absolutely nothing was allowed to break integrity or stability of the CI system, so the Test Automation Service appeared rather as a remote service provider than as a sub-system tightly integrated into CI back-ends.
+
+Yet another issue to be solved was enabling of possible future improvements and replacements of technology used for creation and enabling both the automated test farms and CI back-ends. A common and lightweight interface into the test farm would be quite helpful for re-deploying and updating internals and technologies of the both parties without any negative effects on each other.
+
+All the mentioned issues were more or less easily solved with the Test Automation Clients, living on the side of CI system and its applications. Test Automation Clients are interacting with the test farms through a TCP/IP networks in asynchronous manner and issuing test execution jobs over simple yet easily extendable data protocol. Additionally Test Automation Clients offered a very minimalistic but quite flexible interface for obtaining test artifacts from the CI system's data storage facilities, making possible utilization of both the file-based and database-based vaults.
+
+
+
+---++++ Test Automation Service
+
+All aspects about issuing test execution jobs, supervising and managing test farm, and monitoring test executions are handled by the Test Automation Service. Test Automation Service, or TAS for short, is a standalone networked application which works as the monitoring and load balancing center of the whole test farm. All test nodes are receiving orders for test executions from the TAS and all Test Automation Clients are issuing test jobs directly on the TAS instance. This way TAS knows what test jobs it must to perform and what hardware resources it actually has in its test farm. At the same time TAS monitors executions of the test jobs and notifies clients about all the issues occured during executions.
+
+
+
+---+++ Communications and work
+
+All communications between the TAS components are of fully asynchronous nature and are based on short message exchanges. All messages are using XML format and UTF-8 encoding. That allows TAS to improve and update its components without too heavy efforts from the test farm maintainers or CI back-end developers. Also it makes possible replacement of used computing technologies in the future in all TAS components for as long as communication protocol will remain more or less the same.
+
+
+
+---++++ Hostnames and port numbers
+
+All parts in each communication session are identified only by their hostnames and specified port numbers. For example, each TAS instance is running behind some well known hostname and port number, like =hostname.nokia.com:12345=. This rule is applied only to the TAS instances, since they work as test farms representatives and so, must be accessible from some well know communication points. The test nodes (or better know as Test Automation Communicators) and Test Automation Clients are free to pick up any available hostnames or communication ports for identifying themselves.
+
+The well know TAS address must be used by test nodes planned for work under that TAS instance and the same address must be used in SAIT plugin configurations for issuing test jobs on that TAS instance.
+
+By default all TAS components are trying to automatically extract hostnames of their hosting machines. This is done through studying mandatory environmental variables specified on each computer within the Nokia infrastructures.
+
+Test automation clients are first investigating environmental variable =HOST=, since they are mostly running on top of Linux or UNIX systems. If that environment variable is not presented or specified, then the =HOSTNAME= and =COMPUTERNAME= variables will be examined. The reason why it is not relying on Java Virtual Machine's standard routines for obtaining the hostname is quite simple: because CI back-end is a distributed system using master and slave machines and the corresponding master and slave JVMs. And since Test Automation Client is living inside CI back-end's applications, it may be running physically on a slave's JVM machine while being virtually started from and accessible from the master's JVM machine. So, relying on slave's JVM routines never was the most reliable way to obtain machine's hostname and so, it was replaced by simple examination of environmental variables that JVM in most cases is getting right.
+
+Up on their launch the Test Automation Clients are randomly picking up their communication ports in range between their default port number =16180= and 65535. The port number =16180= was selected in honor of the [[http://en.wikipedia.org/wiki/Golden_ratio][Golden ratio number]], namely after its approximate value 1.618. If some randomly selected port number is not free, the Test Automation Client tries to allocate the next randomly selected port number for as long as it will find a free one.
+
+At the end, Test Automation Client obtains a proper hostname of the hosting machine and a free port number, and launches a listening TCP/IP socket on these parameters. Later these obtained hostname and port number are always specified by the Test Automation Client as sender's hostname and port number in all outgoing messages. This way any receiver of the message will always know who've send the message and behind what hostname and port number sender is listening for incoming messages.
+
+In the similar manner test nodes, or more specifically, Test Automation Communicators are studying environmental variables =HOST=, =HOSTNAME= and =COMPUTERNAME= for obtaining hostname of their hosting machine with a small exception that they first try to get the hostname from JVM standard routines. This is done in opposite to the Test Automation Clients, because Test Automation Communicators are usually running on dedicated PCs with carefully preconfigured environments and so, their JVMs in most cases may correctly extract hostnames of the hosting machines. Again, if JVM will be not able to extract a hostname of the machine, the environmental variables will be studied.
+
+Up on the startup the Test Automation Communicator is trying to automatically pick up a communication port in range between its default port number =27182= and 65535. The port number =27182= was selected in honor of the mathematical [[http://en.wikipedia.org/wiki/%E2%84%AF][constant E]], namely after its approximate value 2.7182. If a selected port number is not free, the Test Automation Communicator tries to allocate the very next port number for as long as it will find a free one.
+
+The Test Automation Service is also tries automatically extract hostname of the hosting machine by first using the standard routines of the JVM and only then (in case of failure or some problem) by studying environmental variables =HOST=, =HOSTNAME= and =COMPUTERNAME=. But since each instance of the Test Automation Service must be running under well defined port number, it will stop launching if specifid or default port number will be not free.
+
+The default port number for Test Automation Service is =31415=. The port number =31415= was selected in honor of the mathematical [[http://en.wikipedia.org/wiki/Pi][constant Pi]], namely after its approximate value 3.1415. But as it was said earlier, if default or some other specified port number will be not available, the Test Automation Service will stop launching, since each Test Automation Service instance must be running under well known and properly specified hostname and port number.
+
+With explained hostname and port number approach it is possible to run all the three components on just the same computer. In that case all three parts, namely the Test Automation Service, Test Automation Communicator and Test Automation Client will share the same hostname, but will use three different port numbers to identify themselves. However, such deployment scheme is rather suitable for TAS development needs and never seen to be useful in production environments.
+
+But at the same time it is absolutely possible to run both the Test Automation Service and Test Automation Communicator on the same computer. Such deployment scheme could be useful in cases when a development team has a single dedicated PC for testing and product flashing pursposes but wants to use CI system for software builds and test results handling. In that case Test Automation Clients, living on the side of CI system, will be able to communicate with the Test Automation Service and Test Automation Communicator running on that dedicated PC.
+
+In production environments the most reliable and efficient deployment scheme was shown after separation of three components from each other. In other words, when Test Automation Communicators, Test Automation Service and Test Automation Clients were running on different machines. In that case some technical troubles, occured on some of the machines (like network reconfigurations or OS updates) hasn't any significant negative impacts on the rest of the systems and test farms.
+
+
+
+---++++ Registrations to the Test Automation Service
+
+Test Automation Service application is the central hub of each installed test farm. All test nodes (Test Automation Communicators) and Test Automation Clients must register to the Test Automation Service in order to work with it. A registration of Communicator or Client is done through sending a very simple registry message which must contain hostname and listening port number of Communicator or Client and some other optional information, like a description of the Communicator. The format for a registry message is explained in the following example:
+
+<verbatim>
+<!-- All registry operation messages must be encoded in UTF-8 and each line must end with the new-line symbol '\n' -->
+<?xml version="1.0" encoding="UTF-8"?>
+<message>
+    <!-- Type of the registry message must be specified as "registry-operation" -->
+    <type>registry-operation</type>
+    <!-- "Sender" here is either Test Automation Client or Test Automation Communicator -->
+    <sender>
+        <!-- Hostname of the Test Automation Client or Test Automation Communicator -->
+        <hostname>sender.hostname.com</hostname>
+        <!-- Listening port of the Test Automation Client or Test Automation Communicator -->
+        <port>12345</port>
+    </sender>
+    <!-- "Receiver" here is Test Automation Service -->
+    <receiver>
+        <!-- Hostname of the Test Automation Service -->
+        <hostname>receiver.hostname.com</hostname>
+        <!-- Listening port of the Test Automation Service -->
+        <port>23456</port>
+    </receiver>
+    <!-- Registry operation message requires that envelope will contain a description about the remote part: either Test Automation Client or Test Automation Communicator -->
+    <envelope>
+        <!-- Id of related registry operation:
+             "register" operation means a new Test Automation Client or Test Automation Communicator will be working with this Test Automation Service
+             "deregister" operation means that Test Automation Client or Test Automation Communicator will be not anymore working with this Test Automation Service
+             "update" operation means that Test Automation Client or Test Automation Communicator are updating their contacts to the ones mentioned in envelope -->
+        <operation>register | deregister | update</operation>
+        <!-- The "remote" element describes the category of a remote part
+             "test-node" must be used by the Test Automation Communicators
+             "client" must be used by the Test Automation Client -->
+        <remote>test-node | client</remote>
+        <!-- Test node can put more details about itself inside this block -->
+        <test-node>
+            Description of related test node...
+        </test-node>
+    </envelope>
+</message>
+</verbatim>
+
+Registy messages tell Test Automation Service the hostnames and listening port numbers of Communicators and Clients. Later these contacts will be used by Test Automation Service for sending messages and interacting with registered Clients or Communicators. At any time Client or Communicator may de-register from the Test Automation Service. In that case Test Automation Service will perform all necessary cleanups. However, Test Automation Service is not relying fully on de-registration messages, since Clients or Communicators may be simply stopped, crashed or become offline because of some network issues. That's why Test Automation Service is actually checking from time to time if registered Test Automation Clients or Communicators are still alive and online.
+
+
+
+---++++ Checking if Test Automation Clients are alive and online
+
+Test Automation Clients must be checked if they are alive and online just because CI system may cancel executions of the test job without a proper notification of the Test Automation Service. In such case all test jobs that are currently under execution for that Test Automation Client in the test farm must be stopped immediately, since CI system is no longer interested in results of these test jobs and all reserved hardware or software resouces must be released for other jobs.
+
+However, since the Test Automation Service may simultaneously run hundreds of test jobs, the networks must be used quite wisely. That's why Test Automation Service is performing connectivity checks with Test Automation Clients each 10 minutes by default. Moreover, that period of time is parametrized in the =configuration.dat= file of the Test Automation Service under parameter name =remote-client-checking-period=. The =remote-client-checking-period= parameter must be specified in milliseconds, and its default value is =600000=, or 10 minutes.
+
+Depending on the loads that Test Automation Service is handling, it is possible to increase or decrease this parameter. For example, if workloads are very high, and remote clients are executing very short tests, it is possible to disable checks of remote clients by specifying large timeouts in the =remote-client-checking-period=, like for example 6 hours. In that case remote client checks most probably will never be executed during the lifetime of a remote client and Test Automation Service will have less things to do with remote clients.
+
+But since networks may sometimes misbihave, Test Automation Service is always performing tripple check of network connectivities in case of any occured network error or exception. In other words, when Test Automation Service is trying to check if Test Automation Client is alive, it makes it 2 more times after the first network error or failure and keeps 30 seconds delay between these checks. And so, if after 3 checks made within the 1 minute and 30 seconds networks will still bring some failures, the Test Automation Client will be considered as a disconnected one and Test Automation Service will perform all necessary cleanups: will stop monitoring and executing all tests currently issued from a disconnected Test Automation Client and will release all products reserved for stopped test executions.
+
+
+
+---++++ Checking if Test Automation Communicators are alive and online
+
+Test nodes, or Test Automation Communicators as they could be described from the software point of view, are representing a more dynamic and challenging type of resources in the test farm. First of all, there could be dozens of test nodes under the same Test Automation Service, sometimes all inside the same ad-hoc network with some poor or limited bandwidths. At the second, each of the Test Automation Communicators (test nodes) can be responsible for dozens of connected Nokia products or prototypes. And since availability of these products is a very important aspect of the whole test farm's wellbeing, so Test Automation Service is performing more frequent checks of its test nodes and related products. Namely, at each message send to the test node.
+
+If a network problem will arise at some point of communications between Test Automation Service and a Test Automation Communicator, the Test Automation Service will try to re-send message 2 more times with the 30 seconds interval between them. If after that Test Automation Communicator will be still inaccessible, the Test Automation Service will consider that Communicator being offline and will perform all necessary cleanups: will stop monitoring all corresponding test executions and will notify responsible Test Automation Clients about failed test executions due to disconnected test node.
+
+
+
+---++++ Checking if Test Automation Service is alive and online
+
+Relying on health checks of Test Automation Clients and Communicators isn't actually enough in the real world Nokia's infrastructures. Test Automation Service by itself may get some network or hardware troubles and become isolated from the outside world. That's why Test Automation Clients and Communicators are checking if Test Automation Service is alive from time to time.
+
+Test Automation Clients are checking if Test Automation Service is online at each message send. If Client couldn't send a message to the Test Automation Service for some reason, it will re-try sending for 2 more times with the 30 seconds interval between them. If after that Test Automation Service will be still inaccessible, the Test Automation Client will consider that Service being offline and will perform all necessary cleanups: will notify its listener about failed test executions due to inaccessible Test Automation Service.
+
+In the same manner Test Automation Communicators are checking if Test Automation Service is online. Namely, at each message send. If Communicator couldn't send a message to the Test Automation Service for some reason, it will re-try sending for 2 more times with the 30 seconds interval between them. If after that Test Automation Service will be still inaccessible, the Test Automation Communicator will consider that Service being offline and will perform all necessary cleanups: will stop all local test executions and will release all reserved products.
+
+
+
+---++++ Test execution workflow
+
+A usual workflow of the single test execution is presented on the following figure:
+
+<img src="%ATTACHURLPATH%/TestExecutionByTASComponents.png" alt="Test execution by TAS components"/>
+
+
+
+---++++ Operations on tests
+
+All test executions are started, handled, monitored, stopped or updated from the corresponding test operation messages. Each test operation message must always specify the test and operation that must be performed on that test. The format of a test operation message is presented in the following section:
+
+<verbatim>
+<!-- All test operation messages must be encoded in UTF-8 and each line must end with the new-line symbol '\n' -->
+<?xml version="1.0" encoding="UTF-8"?>
+<message>
+    <!-- Test operation messages always have the type "test-operation" -->
+    <type>test-operation</type>
+    <!-- Sender of the message must be always identified by its hostname and listening port number -->
+    <sender>
+        <hostname>sender.hostname.com</hostname>
+        <port>12345</port>
+    </sender>
+    <!-- Receiver of the message must be always identified by its hostname and listening port number -->
+    <receiver>
+        <hostname>receiver.hostname.com</hostname>
+        <port>23456</port>
+    </receiver>
+    <!-- Test operation message requires that envelope will contain a description about the test and operation that receiver should perform on it -->
+    <envelope>
+        <!-- Id of related test operation:
+             "start" operation means that receiver should start handling the test specified by the sender
+             "stop" operation means that receiver should stop handling the test specified by the sender
+             "update" operation means that receiver should update test information exactly to the one specified by the sender in this message
+             "check" operation means that receiver should check if specified test is still under execution or monitoring on the sender's side -->
+        <operation>start | stop | update | check</operation>
+        <!-- Information about related test -->
+        <test>
+            Description of related test...
+        </test>
+    </envelope>
+</message>
+</verbatim>
+
+---+++++ Starting tests
+
+To start some test on some test farm, a client must send the "start" test operation message to the Test Automation Service managing that test farm. The test operation message must contain a detailed description of the test, together with the "start" operation id. Test Automation Service verifies that test description contains all necessary information and will either start a new monitor for that test, or fail it immediately with explanations why it cannot execute such test. At least the following rules are applied to the test descriptions:
+
+<blockquote>
+1. Test id must be specified. It cannot be empty and it cannot contain any characters which are not supported or not recommended for use by Windows of Linux file systems, like for example, tilde (~), percent (%), ampersand (&), asterisk (*), braces ({ and }), backslash (\), colon (:), angle brackets (< and >), question mark (?), slash (/), plus sign (+), pipe (|) and quotation mark (").
+
+2. Test target must be specified. Currently tests are specifiying either "flash" or "nose" targets. The "flash" target means that real products or protorypes must be obtained from the test farm and (possibly) flashed during the test executions. The "nose" target stands for "Nokia Simulation Environment" and means that test farm's test nodes will be used as pure computing resources.
+
+3. If test target was specified as "flash", the test description must contain either a list of required products (with more or less detailed specifications) or a specification for required environments. If test target was specified as "nose", the Test Automation Service will not be looking for any specifications of required products or environments.
+
+4. Test must specify at least one test artifact (file involved with the execution of test).
+
+5. Test must specify name of the file with test results that should be generated at the end of test executions.
+
+6. Test must specify a combination of test executor application and test executor script.
+</blockquote>
+
+TAS will created so called Test Monitor for the accepted test. Test Monitors are running inside TAS and are responsible for supervising executions of the test. They are ensuring that Test Automation Client gets all necessary information about test's workflow, including notifications about the occured failures and issues with the test farm itself.
+
+At the beginning each created Test Monitor is placed into the queue of test resource requesters. That queue is used for prioritizing and ensuring fair utilization of the test farm resources. By default TAS scans its test farm each 15 seconds and tries to allocate for each Test Monitor as much resources (products or test nodes) as test has requested and as test farm currently has. The whole process of product and test node allocations could be described in the following manner:
+
+<blockquote>
+1. TAS scans test farm to find currently free products and test nodes with the appropriate capacity (less than the =maximal-number-of-tests-per-node= parameter has specified in the =configuration.dat= file)
+
+2. TAS extracts a test monitor from the queue of test resource requesters and gets all product groups required by its test
+
+3. TAS matches specified product groups against available resources
+
+4. If all requested product groups has got their matches, TAS studies if test could be splitted into sub-tests according to the number of available matching product groups
+
+5. TAS splits main test into sub-tests by careful reshaking of its test packages and by creating new sub-test descriptions
+
+6. Each created sub-test gets reserved its own group of matching products and also so called Test Handler which will take care about sub-test's executions on reserved test node and products
+
+7. If all sub-tests has got its matching product groups, the Test Monitor gets notified about what sub-tests and what Test Handlers has been created during reservation of test farm's resources
+
+8. If no errors occured during reservation of resources from the test farm, the handled Test Monitor is removed from the queue of test resource requesters and processing goes to the next Test Monitor
+</blockquote>
+
+In cases when test farm hasn't any matches for requested product groups the TAS simply checks expriration of test timeouts and also verifies that test is getting requested products within the so called "test resource expectation timeout", configured under the parameter =test-resources-expectation-timeout= in the =configuration.dat= file. By default "test resource expectation timeout" is 15 minutes which means that a test is keeped in the test resource requesters queue for no longer than 15 minutes and simply failed after due to missing available products from the test farm.
+
+Soon after creation the Test Handler starts negotiating with the test node reserved for its sub-test executions by sending a "start" test message together with sub-test's detailed descriptions. The mentioned "start" test message contains all information necessary to start sub-test executions on a PC in the test farm.
+
+
+
+---+++++ Starting test execution on a test node
+
+Test Automation Communicator is responsible for executing and handling tests on a test node. The Communicator simply notifies TAS about its locally available products and waits for orders to start the new test executions. When TAS decides to run a test on a test node, it simply send a special "start" test message to the corresponding Communicator living on that test node. In its turn Test Automation Communicator studies the contents of received "start" test message, creates a Test Executor for handling the test and also a test workspace directory on test node's hard drive.
+
+The mentioned "start" test message also contains information about the Test Automation Client that has issued received test. This information helps Test Automation Communicator to obtain test artifacts required to start test executions by direct communications with the remote Test Automation Client. As soon as all test artifacts are delivered to the test node, the Communicator starts test execution by creating an external process invoked with the number of special parameters.
+
+The most important parameters of that process are the "test execution application" mentioned in the test descriptions, like for example Iron Python's "ipy", the "test execution script" also mentioned in the test descriptions, like for example "executor.py" and the absolute paths to configuration files about the products reserved for this test and maintained by the Communicator. All these parameters are enough to start test executions on the test node and also explain test execution process about the products selected for the test. The rest of test executions, as well as responsibility of generating "test results file" also mentioned in the test descriptions, is totally relied on the functinality of delivered "test execution script".
+
+When test execution process will finish its work, the Test Automation Communicator will study test's workspace directory for a "test results file". If such file is existing, the Communicator will try to send it back to the Test Automation Client. Only after that test execution will be considered to be over and Communicator will notify TAS about finished test.
+
+While such scheme may sound a little bit complicated, it helps to solve a number of problems involved with the automated test executions. First of all, it enables flexibility and reconfigurability of executed tests since all test execution functionality is kept inside the "test execution script". The "test execution application" is in most cases mentioned as Iron Python's interpreter, or "ipy", while in fact it could be changed to "perl", "FastTrace.exe" or even to "SomeSpecialTestingApplication.exe" for as long as CI back-ends and building tools will be able to provide or access one on the test nodes.
+
+By knowing a "test results file", the Test Automation Communicator is made free from any issues related to the test results handing or changes in test results managment. Currently test results are visible to TAS components as plain zip-files, containing all sorts of reports, but their contents may be changed absolutely freely according to "test resource executor's" functionality. For example, if "test execution script" will generate test results as "TestResults.doc" file, all is needed is just to mention that name as as "test results file". The rest will be automatically handled by Test Automation Communicator.
+
+All this done for turning test nodes into flexible and dynamic computing resources rather than into bulky and "always-need-to-reconfigure" machines.
+
+By direct interactions between Test Automation Communicator and Clients we decreasing loads on networks and TAS, since there is absolutely no reason to involve TAS into test artifacts copying process or into process of delivering outputs from the test execution process. TAS is notified about the most important things, like permanently disconnected products or failures occured during the test executions, while Test Automation Client gets all information about test executions, including the detailed outputs from the test execution process.
+
+
+
+---+++++ Monitoring test execution
+
+Test execution is monitored from many places. First of all, the TAS is monitoring test executions from its Test Monitors and Handlers. At the same time Test Automation Clients are sending "check test" messages from time to time just to ensure that TAS is running the issued tests. And Test Automation Communicators are ensuring that test executin processes are existing and running on the test nodes.
+
+Test timeouts are checked from the Test Automation Service, Communicators and Clients in various places just to prevent any possible waste of test farm's resources.
+
+After the test got reserved products and test nodes from the test farm, its handling is monitored by its Test Handler. Test Handler first sends a "start test" message to the test node where Test Automation Communicator downloads all required artifacts for the test and launches executions. This is the moment when test considered to be successfully started. Test Automation Communicator will inform Test Automation Service about any issue occured during test preparations, so that Test Handler will be always aware about test's workflow.
+
+If some problem occured, Test Handler will stop handling test and will inform Test Monitor about occured issues. Test Monitor will make a decision if failed test could be restarted or not and will either notify Test Automation Client about failed test of will request Test Automation Service to restart failed test.
+
+While this could seems like a too complicated approach, we should probably notice that Test Monitor could have multiple Test Handlers, each working on its own sub-test. So this way Test Monitor works as a whole test superviser while Test Handlers are managing the given sub-tests.
+
+All this enables to utilize quite flexible configuration and scalability towards splitted and heavy tests. For example, Test Automation Service has in its configuration the maximal amount of failures for the tests (3 by default), and if a single sub-test has failed for some reason, the other sub-tests shouldn't be stopped because of that. A failed test should be simply restarted and so, help the whole test to be done.
+
+When test or sub-test has finished its work, a "test executor script" should generate a file with the test results. The name for that test results file must be specified in the test description delivered to the Test Automation Service, so Test Automation Communicator and its Test Executor will know what file should be send back to the Test Automation Client for delivering test results.
+
+When a file with test results is deliverd to the Test Automation Client, the test is considered to be over. If external test execution process has returned the 0 exit value, the test execution is considered to be successful. Any other values are considered as indication about the failure.
+
+And as earlier was described, if a test or sub-test has failed, Test Automation Service tries to restart it for the maximal allowed number of times in order to get the test done.
+
+
+
+---+++++ Stopping test execution
+
+Tests could be stopped by issuing a "stop test" messages from the Test Automation Client. Test Automation Service and Communicators can also stop a test at some points, but in that case Test Automation Client will always receive the "test failed" message with all the details explained behind a test failure.
+
+
+
+---+++ Internals of the Test Automation Communicator
+
+Internals of the Test Automation Communicator could be graphically presented as on the following figure:
+
+<img src="%ATTACHURLPATH%/TestAutomationCommunicatorInternals.png" alt="Internals of the Test Automation Communicator"/>
+
+Every module inside the Test Automation Communicator is responsible for its own set of tasks and functionality:
+
+=FuseProxy.java= interacts with the CIProxy.exe application through a TCP/IP socket. CIProxy.exe must be running before the Communicator is launching, since otherwise =FuseProxy.java= will be not able to connect to the CIProxy's TCP/IP port 14999. All messages from the CIProxy.exe application are encoded in a special format that =FuseProxy.java= understands. In its turn the =FuseProxy.java= turns these parsed messages into =Product= objects and notifies =ProductExplorer.java= if the mentioned product has been connected or disconnected from the test node.
+
+=ProductConfigurationHandler.java= handles all aspects of managing special product configuration files stored in the Communicator's =/products= directory in the XML form. Product configuration files contain some parameters that could be updated by test farm's maintainers (like SIM cards related parameters, product's hardware type and environment descriptions) and some parameters which are always updated by the Communicator (like product's FUSE connection name and id, CIProxy port, hostname, IP addresses, etc.) So, =ProductConfigurationHandler.java= ensures that all available products are always getting updated configuration settings and runtime parameters.
+
+=ProductExplorer.java= in its turn combines functionalities of the =FuseProxy.java= and =ProductConfigurationHandler.java= into a fully independent module which handles all aspects of interacting with the products on a test node. The =ProductExplorer.java= also independently notifies Test Automation Service about the current status of products on a test node, so making test farm's central managment component aware about the available products.
+
+=Sender.java= handles all aspects of sending messages and files to the outside world. Since each message is always specified with the receiver's hostname and port, it is always aware about where the message should be send. All problems occured during sending the messages or files are always reported back to the Test Automation Communicator or Test Executors.
+
+=Receiver.java= in its turn handles all aspects of receiving messages and files from the outside world. Since each message is always specified with the type and sender's hostname and port, the Receiver is always aware about who should be responsible for handling the received message or file. All problems occured during receiving the messages or files are always reported back to the Test Automation Communicator or Test Executors.
+
+=FileCache.java= is used for minimizing file transfers from Test Automation Clients to the Test Automation Communicators in cases when the same test is splitted into multiple sub-tests and executed in parallel on the same test node. In such case all common test artifacts, like product's software images, testing tools and content files are not requested and delivered for each of the sub-tests, but rather first requested for one of them and then, after a successful receive copied into workspaces of the similar parallel sub-tests running on the same test node. That helps to eliminate unnecessary transfers of the files which are already delivered to the test node and which are similar across all local and parallel sub-tests.
+
+=FileCacheEntry.java= is an entry about a file in the local File Cache. Each entry contains all important information about a file: its name, related test and file request, full local path and marks about whenever this file was already requested or delivered from the Test Automation Client. All this information helps to find the files which are similar across multiple local sub-tests and so, help to minimize network usages. In its turn File Cache ensures that all its entries are always up to date and performs all automatic cleanups when they become necessary.
+
+=TestExecutor.java= takes care about all spects of a single test execution on a test node. It takes care about test artifacts requests to the Test Automation Client, ensures that all test artifacts are delivered, makes all necessary preparations for the test (like generating JSON descriptions for the reserved products) and finally launches external test execution process to start the actual testing. When external test execution process finishes its work, =TestExecutor.java= studies what was the return code and make a decision about test's success or failure. In any case it tries to deliver a file with test results back to the Test Automation Client through issuing an outcoming file transfer request. Finally it performs all necessary cleanups, including the check that external test execution process is not hanged up in the test node's memory by studying all currently running process via the Window's standard Management Instrumentation utility called "WMIC". Test Automation Communicator has as much Test Executors as tests were launched on the test node.
+
+=TestAutomationCommunicator.java= is the central part of Test Automation Communicator. It manages all aspects of Communicator's proper startup and initialization and also ensures that tests get executed properly and on time whatever the circumstances are.
+
+
+
+---+++ Internals of the Test Automation Service
+
+Internals of the Test Automation Service could be graphically presented as on the following figure:
+
+<img src="%ATTACHURLPATH%/TestAutomationServiceInternals.png" alt="Internals of the Test Automation Service"/>
+
+Every module inside the Test Automation Service is responsible for its own set of tasks and functionality:
+
+=Configuration.java= is responsible for interpreting TAS configuration settings stored in the =configuration.dat= file. Configuration updates itself each 5 minutes and so enables TAS to change its settings and test execution workflows on the fly.
+
+=Receiver.java= handles all aspects of receiving messages from the outside world, including the remote Test Automation Clients and Test Nodes. Since each message is always specified with the type and sender's hostname and port, the Receiver is always aware about who should be responsible for handling the received message. All problems occured during receiving the messages are always reported to the Test Automation Service.
+
+=HttpHandler.java= is a simple hanlder of HTTP GET requests that could be issued on running TAS instances. One of the primary tasks of HTTP handler is to enable displaying TAS status pages in web browsers and also enable extractions of product descriptions in JSON format which are then used by the CI UI applications.
+
+=HttpHandlerRequest.java= bundles a HTTP request with the remote socket connection, making HTTP requests handling more easier.
+
+=TestNode.java= is respondible for handling all aspects of managing a single test node in the test farm, altogether with its products. =TestNode.java= communicates directly with the Test Automation Communicator running on that test node and reports about all occured problems directly to the Test Automation Service or related Test Monitors. Test Automation Service has as much Test Node instances as test farm has test nodes.
+
+=RemoteClient.java= represents a single remote Test Automation Client that has issued some test on this Test Automation Service and its test farm. The same =RemoteClient.java= could take care about multiple tests issued on the same test farm. It interacts directly with the remote Test Automation Client, running somewhere in the outside world and reports about all occured problems directly to the Test Automation Service or related Test Monitors. Test Automation Service has as much Remote Clients as there were remote Test Automation Clients connected to the TAS.
+
+=TestMonitor.java= is responsible for managing a single test issued from some Test Automation Client. It takes care about all aspects of the whole test execution process, like timeout and issues with the Test Automation Clients, but its main role is to supervise Test Handlers and make decisions whenever a failed sub-test could be restarted or not and whenever the whole test should be stopped or failed. Test Automation Service has as much Test Monitor instances as there were test issued on the TAS.
+
+=TestHandler.java= is responsible for managing a single sub-test issued from its Test Monitor. It interacts directly with the test node and products reserved for the sub-test and takes care about all aspects of sub-test execution on that test node. It reports directly to the Test Monitor about all problems occured during the sub-test execution. Another important task of the Test Handler is to keep updated the sub-test record file in the =/statistics= directory of the TAS. That information later will be used by the Statictis module and diplayed on the status page of the TAS. Test Monitor has as much Test Handlers as there were sub-tests created and initialized for executions.
+
+=Statistics.java= is responsible for extracting useful information from the test record files stored in the =/statistics= directory of the TAS. That information is used later on TAS status web pages, so making test farm's maintainers to see what's going and what actions needed to be taken. By default Statistics updates itself each 15 minutes, but that could be changed from the =configuration.dat= file.
+
+
+
+---+++ Internals of the Test Automation Client
+
+Internals of the Test Automation Client could be graphically presented as on the following figure:
+
+<img src="%ATTACHURLPATH%/TestAutomationClientInternals.png" alt="Internals of the Test Automation Client"/>
+
+Every module inside the Test Automation Client is responsible for its own set of tasks and functionality:
+
+=Receiver.java= handles all aspects of receiving messages and files from the outside world, including the remote Test Automation Service and Test Automation Communicators. Since each message is always specified with the type and sender's hostname and port, the Receiver is always aware about who should be responsible for handling the received message or file. All problems occured during receiving the messages or files are always reported to the Test Automation Client and its Test Automation Service Listeners.
+
+=FileSender.java= is responsible for sending files directly from Test Automation Client to the remote Test Automation Communicators. Internally File Sender is not anyhow in touch with the local file systems or storages, but rather gets access to the files in form or opened and ready to be used input streams. In its turn input streams to the files are provided by the Test Automation Service Listeners that could and should handle all aspects and issues of access to the files and user permission.
+
+=RemoteService.java= is representation of a single remote Test Automation Service that Client uses for some test executions. Remote Service works independently and handles all aspects of interacting with a remote TAS instance. All problems related to communication issues with the remote TAS instances are reported back to the Test Automation Client. A single Test Automation Client may have multiple instances of the Remote Service objects. Basically as much as TAS instances were mentioned in the issued tests. And the same Test Automation Client may issue multiple tests on the same TAS instance which will be then handled through the single Remote Service.
+
+=TestRegistry.java= is a container for the single test being under execution at some Test Automation Service. Its main role is to bundle test description and the responsible Test Automation Service Listener together. The same Test Automation Client may have multiple Test Registries, one for each test being currently under execution.
+
+=TestAutomationServiceListener.java= represents an application that uses Test Automation Client for issuing tests on remote Test Automation Service. The main role of Test Automation Service Listener is to let Test Automation Clients to interact with applications without worrying too much about their internals. Any application implementing the Test Automation Service Listener will get the possibilities to be notified about test execution's workflow and also will be able to get test results back. Another important task of the Test Automation Service Listener is to enable access to the test artifacts from the Test Automation Client and its File Sender.
+
+=TestAutomationClient.java= is the Test Automation Client itself. A single application may use multiple Test Automation Clients and the same Test Automation Client may issue multiple tests on multiple Test Automation Services.
+
+

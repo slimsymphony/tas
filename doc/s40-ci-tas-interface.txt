@@ -1,0 +1,25 @@
+The Test Automation Service Interface is a web application for tracking remote Test Automation Service instances.
+
+For obtaining help on Test Automation Service Interface startup, run command:
+
+    java -jar TestAutomationServiceInterface.jar --help
+
+To run Test Automation Service at some port and with some description, run command:
+
+    java -jar TestAutomationServiceInterface.jar TestAutomationServiceInterfacePortNumber=8181 TestAutomationServiceInterfaceDescription="Some description, if any"
+
+After a successful start the Test Automation Service Interface will create all necessary folders and a default configuration file called "configuration.dat".
+
+Open it and modify the following parameter:
+
+"test-automation-service-instances-checking-period", which defines the delay (in milliseconds) between checks of remote Test Automation Service instances
+
+By default, all checks are done each 5 minutes, but it could be adjusted as needed.
+
+Add the web addresses of remote Test Automation Services for traking in the following form:
+
+test-automation-service-address=http://tas-hostname-01.nokia.com:12345
+test-automation-service-address=http://tas-hostname-02.nokia.com:23456
+etc.
+
+The configuration file is checked against changes each 5 minutes, so after that time new web addresses should be extracted and used for tracking, as well as possibly new value in the "test-automation-service-instances-checking-period" parameter.
